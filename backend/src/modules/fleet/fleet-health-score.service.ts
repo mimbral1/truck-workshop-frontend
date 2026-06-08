@@ -1,14 +1,23 @@
 import { resourceByName } from '../../config/resource-lookup.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
+import type { PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 
-const HEALTH_STATUS_LABELS = {
+const HEALTH_STATUS_LABELS: Record<string, string> = {
   CRITICAL: 'Critico',
   HEALTHY: 'Operativo sano',
   RISK: 'Riesgo operativo',
   WARNING: 'Atencion',
 }
 
-const OPERATIONAL_STATUS_PENALTIES = {
+interface OperationalPenalty {
+  action: string
+  category: string
+  label: string
+  points: number
+  severity: string
+}
+
+const OPERATIONAL_STATUS_PENALTIES: Record<string, OperationalPenalty> = {
   BLOCKED: { action: 'Resolver bloqueo operacional antes de asignar flete.', category: 'OPERATIONAL', label: 'Camion bloqueado', points: 28, severity: 'CRITICAL' },
   IN_WORKSHOP: { action: 'Validar avance de taller y fecha real de salida.', category: 'MAINTENANCE', label: 'En taller', points: 18, severity: 'RISK' },
   OUT_OF_SERVICE: { action: 'Mantener fuera de planificacion hasta regularizar estado.', category: 'OPERATIONAL', label: 'Fuera de servicio', points: 35, severity: 'CRITICAL' },
@@ -19,7 +28,62 @@ const DOCUMENT_BLOCKING_STATUSES = new Set(['EXPIRED', 'MISSING'])
 const DOCUMENT_WARNING_STATUSES = new Set(['EXPIRES_SOON_15', 'EXPIRES_SOON_30'])
 const OPEN_INCIDENT_STATUSES = new Set(['OPEN', 'UNDER_REVIEW'])
 
+interface Deduction {
+  action?: string
+  category?: string
+  label?: string
+  points: number
+  relatedEntityId?: unknown
+  relatedEntityType?: string
+  severity?: string
+}
+
+interface TruckHealthRow {
+  actionState: string
+  assignedDriverName: unknown
+  brand: unknown
+  costPerKm: number
+  deductions: Deduction[]
+  mainBlocker: unknown
+  model: unknown
+  monthlyCost: number
+  nextAction: string
+  operationalStatus: unknown
+  plate: string
+  previousScore: unknown
+  score: number
+  scoreDelta: number
+  status: string
+  statusLabel: string
+  summary: string
+  topRiskCategory: string
+  truckId: unknown
+  truckLabel: string
+  updatedAt: string
+}
+
+interface BuildTruckHealthRowInput {
+  costSummary?: PlainRecord
+  currentScore?: PlainRecord
+  documents: PlainRecord[]
+  fuelRecords: PlainRecord[]
+  incidents: PlainRecord[]
+  maintenancePlans: PlainRecord[]
+  telemetry?: PlainRecord
+  truck: PlainRecord
+  updatedAt: string
+}
+
 export class FleetHealthScoreService {
+  private readonly documents: ResourceRepositoryContract
+  private readonly fleetTrucks: ResourceRepositoryContract
+  private readonly fuelRecords: ResourceRepositoryContract
+  private readonly healthScores: ResourceRepositoryContract
+  private readonly incidents: ResourceRepositoryContract
+  private readonly maintenancePlans: ResourceRepositoryContract
+  private readonly telematics: ResourceRepositoryContract
+  private readonly truckCostSummaries: ResourceRepositoryContract
+
   constructor() {
     this.documents = createRepository(resourceByName('truck-documents'))
     this.fleetTrucks = createRepository(resourceByName('fleet-trucks'))
@@ -52,17 +116,17 @@ export class FleetHealthScoreService {
       this.truckCostSummaries.findAll({ limit: 100, order: 'desc', sort: 'costPerKm' }),
       this.telematics.findAll({ limit: 100, order: 'desc', sort: 'lastSignalAt' }),
     ])
-    const currentScoreByTruck = groupFirstBy(currentScoresResult.data, 'truckId')
-    const rows = trucksResult.data
+    const currentScoreByTruck = groupFirstBy(currentScoresResult.data as PlainRecord[], 'truckId')
+    const rows = (trucksResult.data as PlainRecord[])
       .map((truck) =>
         buildTruckHealthRow({
-          costSummary: costSummariesResult.data.find((item) => item.truckId === truck.id),
+          costSummary: (costSummariesResult.data as PlainRecord[]).find((item) => item.truckId === truck.id),
           currentScore: currentScoreByTruck.get(truck.id),
-          documents: documentsResult.data.filter((item) => item.truckId === truck.id),
-          fuelRecords: fuelResult.data.filter((item) => item.truckId === truck.id),
-          incidents: incidentsResult.data.filter((item) => item.truckId === truck.id),
-          maintenancePlans: maintenanceResult.data.filter((item) => item.truckId === truck.id),
-          telemetry: telemetryResult.data.find((item) => item.truckId === truck.id),
+          documents: (documentsResult.data as PlainRecord[]).filter((item) => item.truckId === truck.id),
+          fuelRecords: (fuelResult.data as PlainRecord[]).filter((item) => item.truckId === truck.id),
+          incidents: (incidentsResult.data as PlainRecord[]).filter((item) => item.truckId === truck.id),
+          maintenancePlans: (maintenanceResult.data as PlainRecord[]).filter((item) => item.truckId === truck.id),
+          telemetry: (telemetryResult.data as PlainRecord[]).find((item) => item.truckId === truck.id),
           truck,
           updatedAt: generatedAt,
         }),
@@ -95,9 +159,9 @@ export class FleetHealthScoreService {
     }
   }
 
-  async upsertHealthScore(row, actorName) {
-    const currentResult = await this.healthScores.findAll({ limit: 1, truckId: row.truckId })
-    const current = currentResult.data[0]
+  async upsertHealthScore(row: TruckHealthRow, actorName: string) {
+    const currentResult = await this.healthScores.findAll({ limit: 1, truckId: row.truckId as string })
+    const current = currentResult.data[0] as PlainRecord | undefined
     const payload = {
       deductions: row.deductions,
       score: row.score,
@@ -108,11 +172,11 @@ export class FleetHealthScoreService {
     }
 
     if (current) {
-      return this.healthScores.update(current.id, payload)
+      return this.healthScores.update(current.id as string, payload)
     }
 
     return this.healthScores.create({
-      id: `truck-health-score-${row.truckId}`,
+      id: `truck-health-score-${String(row.truckId)}`,
       createdBy: actorName,
       ...payload,
     })
@@ -129,7 +193,7 @@ function buildTruckHealthRow({
   telemetry,
   truck,
   updatedAt,
-}) {
+}: BuildTruckHealthRowInput): TruckHealthRow {
   const deductions = [
     ...operationalDeductions(truck),
     ...documentDeductions(documents),
@@ -156,7 +220,7 @@ function buildTruckHealthRow({
     monthlyCost: Number(costSummary?.monthlyCost || 0),
     nextAction: nextActionFor(status, actionState, topDeduction),
     operationalStatus: truck.operationalStatus,
-    plate: truck.plate,
+    plate: String(truck.plate),
     previousScore: currentScore?.score,
     score,
     scoreDelta: currentScore ? score - Number(currentScore.score || 0) : 0,
@@ -165,13 +229,13 @@ function buildTruckHealthRow({
     summary: summaryFor(status, truck, topDeduction),
     topRiskCategory: topDeduction?.category || 'NONE',
     truckId: truck.id,
-    truckLabel: `${truck.plate} - ${truck.brand || ''} ${truck.model || ''}`.trim(),
+    truckLabel: `${String(truck.plate)} - ${truck.brand || ''} ${truck.model || ''}`.trim(),
     updatedAt,
   }
 }
 
-function operationalDeductions(truck) {
-  const penalty = OPERATIONAL_STATUS_PENALTIES[truck.operationalStatus]
+function operationalDeductions(truck: PlainRecord): Deduction[] {
+  const penalty = OPERATIONAL_STATUS_PENALTIES[String(truck.operationalStatus)]
 
   if (!penalty) {
     return []
@@ -186,14 +250,14 @@ function operationalDeductions(truck) {
   ]
 }
 
-function documentDeductions(documents) {
-  const activeDocuments = documents.map((document) => ({
+function documentDeductions(documents: PlainRecord[]): Deduction[] {
+  const activeDocuments: PlainRecord[] = documents.map((document) => ({
     ...document,
     status: normalizeDocumentStatus(document),
   }))
-  const blocking = activeDocuments.filter((document) => DOCUMENT_BLOCKING_STATUSES.has(document.status))
-  const warning = activeDocuments.filter((document) => DOCUMENT_WARNING_STATUSES.has(document.status))
-  const deductions = []
+  const blocking = activeDocuments.filter((document) => DOCUMENT_BLOCKING_STATUSES.has(String(document.status)))
+  const warning = activeDocuments.filter((document) => DOCUMENT_WARNING_STATUSES.has(String(document.status)))
+  const deductions: Deduction[] = []
 
   if (blocking.length > 0) {
     deductions.push({
@@ -222,11 +286,11 @@ function documentDeductions(documents) {
   return deductions
 }
 
-function maintenanceDeductions(plans) {
+function maintenanceDeductions(plans: PlainRecord[]): Deduction[] {
   const overdue = plans.filter((plan) => plan.riskStatus === 'OVERDUE')
   const critical = plans.filter((plan) => plan.riskStatus === 'CRITICAL')
   const warning = plans.filter((plan) => plan.riskStatus === 'WARNING')
-  const deductions = []
+  const deductions: Deduction[] = []
 
   if (overdue.length > 0) {
     deductions.push({
@@ -267,12 +331,12 @@ function maintenanceDeductions(plans) {
   return deductions
 }
 
-function incidentDeductions(incidents) {
-  const openIncidents = incidents.filter((incident) => OPEN_INCIDENT_STATUSES.has(incident.status))
+function incidentDeductions(incidents: PlainRecord[]): Deduction[] {
+  const openIncidents = incidents.filter((incident) => OPEN_INCIDENT_STATUSES.has(String(incident.status)))
   const critical = openIncidents.filter((incident) => incident.severity === 'CRITICAL')
   const high = openIncidents.filter((incident) => incident.severity === 'HIGH')
   const medium = openIncidents.filter((incident) => incident.severity === 'MEDIUM')
-  const deductions = []
+  const deductions: Deduction[] = []
 
   if (critical.length > 0) {
     deductions.push({
@@ -313,7 +377,7 @@ function incidentDeductions(incidents) {
   return deductions
 }
 
-function fuelDeductions(records) {
+function fuelDeductions(records: PlainRecord[]): Deduction[] {
   const recentRecords = records.filter((record) => isRecent(record.date, 60))
   const suspicious = recentRecords.filter((record) => record.deviationStatus === 'SUSPICIOUS')
   const warning = recentRecords.filter((record) => record.deviationStatus === 'WARNING')
@@ -321,7 +385,7 @@ function fuelDeductions(records) {
   const averageKmPerLiter = kmPerLiterRecords.length > 0
     ? kmPerLiterRecords.reduce((total, value) => total + value, 0) / kmPerLiterRecords.length
     : 0
-  const deductions = []
+  const deductions: Deduction[] = []
 
   if (suspicious.length > 0) {
     deductions.push({
@@ -360,12 +424,12 @@ function fuelDeductions(records) {
   return deductions
 }
 
-function costDeductions(summary) {
+function costDeductions(summary?: PlainRecord): Deduction[] {
   if (!summary) {
     return []
   }
 
-  const deductions = []
+  const deductions: Deduction[] = []
   const costPerKm = Number(summary.costPerKm || 0)
   const monthlyCost = Number(summary.monthlyCost || 0)
 
@@ -406,12 +470,12 @@ function costDeductions(summary) {
   return deductions
 }
 
-function telemetryDeductions(telemetry) {
+function telemetryDeductions(telemetry?: PlainRecord): Deduction[] {
   if (!telemetry?.lastSignalAt) {
     return []
   }
 
-  const hoursSinceSignal = (Date.now() - new Date(telemetry.lastSignalAt).getTime()) / 3_600_000
+  const hoursSinceSignal = (Date.now() - new Date(telemetry.lastSignalAt as string).getTime()) / 3_600_000
 
   if (!Number.isFinite(hoursSinceSignal) || hoursSinceSignal <= 24) {
     return []
@@ -430,7 +494,7 @@ function telemetryDeductions(telemetry) {
   ]
 }
 
-function buildOverviewSummary(rows) {
+function buildOverviewSummary(rows: TruckHealthRow[]) {
   const total = rows.length
   const averageScore = total > 0 ? Math.round(rows.reduce((sum, row) => sum + row.score, 0) / total) : 0
   const worstRow = rows[0]
@@ -455,8 +519,8 @@ function buildOverviewSummary(rows) {
   }
 }
 
-function actionStateFor(score, truck) {
-  if (['BLOCKED', 'OUT_OF_SERVICE'].includes(truck.operationalStatus) || score < 50) {
+function actionStateFor(score: number, truck: PlainRecord): string {
+  if (['BLOCKED', 'OUT_OF_SERVICE'].includes(String(truck.operationalStatus)) || score < 50) {
     return 'BLOCKED'
   }
 
@@ -467,7 +531,7 @@ function actionStateFor(score, truck) {
   return 'DISPATCH_READY'
 }
 
-function nextActionFor(status, actionState, topDeduction) {
+function nextActionFor(status: string, actionState: string, topDeduction?: Deduction): string {
   if (topDeduction?.action) {
     return topDeduction.action
   }
@@ -483,15 +547,15 @@ function nextActionFor(status, actionState, topDeduction) {
   return 'Revisar riesgos operacionales antes de asignar.'
 }
 
-function summaryFor(status, truck, topDeduction) {
+function summaryFor(status: string, truck: PlainRecord, topDeduction?: Deduction): string {
   if (!topDeduction) {
-    return `${truck.plate} apto para operacion sin descuentos relevantes.`
+    return `${String(truck.plate)} apto para operacion sin descuentos relevantes.`
   }
 
   return `${HEALTH_STATUS_LABELS[status]}: ${topDeduction.label}.`
 }
 
-function healthStatus(score) {
+function healthStatus(score: number): string {
   if (score >= 85) {
     return 'HEALTHY'
   }
@@ -507,16 +571,16 @@ function healthStatus(score) {
   return 'CRITICAL'
 }
 
-function normalizeDocumentStatus(document) {
+function normalizeDocumentStatus(document: PlainRecord): string {
   if (document.status) {
-    return document.status
+    return document.status as string
   }
 
   if (!document.expiresAt) {
     return 'MISSING'
   }
 
-  const days = Math.ceil((new Date(document.expiresAt).getTime() - Date.now()) / 86_400_000)
+  const days = Math.ceil((new Date(document.expiresAt as string).getTime() - Date.now()) / 86_400_000)
 
   if (!Number.isFinite(days)) {
     return 'MISSING'
@@ -537,12 +601,12 @@ function normalizeDocumentStatus(document) {
   return 'VALID'
 }
 
-function isRecent(value, days) {
+function isRecent(value: unknown, days: number): boolean {
   if (!value) {
     return false
   }
 
-  const date = new Date(value)
+  const date = new Date(value as string)
 
   if (Number.isNaN(date.getTime())) {
     return false
@@ -551,12 +615,12 @@ function isRecent(value, days) {
   return Date.now() - date.getTime() <= days * 86_400_000
 }
 
-function clampScore(value) {
+function clampScore(value: number): number {
   return Math.min(100, Math.max(0, Math.round(value)))
 }
 
-function groupFirstBy(items, key) {
-  const map = new Map()
+function groupFirstBy(items: PlainRecord[], key: string): Map<unknown, PlainRecord> {
+  const map = new Map<unknown, PlainRecord>()
 
   items.forEach((item) => {
     if (!map.has(item[key])) {
@@ -567,13 +631,13 @@ function groupFirstBy(items, key) {
   return map
 }
 
-function formatNumber(value) {
+function formatNumber(value: unknown): string {
   return Number(value || 0).toLocaleString('es-CL', {
     maximumFractionDigits: 0,
   })
 }
 
-function formatCurrency(value) {
+function formatCurrency(value: unknown): string {
   return Number(value || 0).toLocaleString('es-CL', {
     currency: 'CLP',
     maximumFractionDigits: 0,

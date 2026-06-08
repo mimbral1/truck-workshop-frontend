@@ -1,7 +1,8 @@
 import { resourceByName } from '../../config/resource-lookup.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
+import type { PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 
-const COST_LABELS = {
+const COST_LABELS: Record<string, string> = {
   DRIVER: 'Chofer / viatico',
   FINE: 'Multas',
   FREIGHT_OPERATION: 'Operacion flete',
@@ -20,7 +21,36 @@ const COST_LABELS = {
 
 const COST_PRIORITY = ['FUEL', 'MAINTENANCE', 'PARTS', 'TIRES', 'REPAIR', 'LABOR', 'TOLL', 'FINE', 'INSURANCE', 'PERMIT', 'DRIVER', 'OTHER']
 
+interface Period {
+  endDate: string
+  label: string
+  mode: string
+  month: number | undefined
+  startDate: string
+  year: number
+}
+
+interface LedgerRecord extends PlainRecord {
+  amount: number
+  costType: string
+  date: string
+  label: string
+}
+
+interface CategorySummary {
+  amount: number
+  label: string
+  percent: number
+  type: string
+}
+
 export class TruckCostAnalyticsService {
+  private readonly costs: ResourceRepositoryContract
+  private readonly fleetTrucks: ResourceRepositoryContract
+  private readonly freightProfitability: ResourceRepositoryContract
+  private readonly fuelRecords: ResourceRepositoryContract
+  private readonly incidents: ResourceRepositoryContract
+
   constructor() {
     this.costs = createRepository(resourceByName('truck-costs'))
     this.fleetTrucks = createRepository(resourceByName('fleet-trucks'))
@@ -29,21 +59,21 @@ export class TruckCostAnalyticsService {
     this.incidents = createRepository(resourceByName('incidents'))
   }
 
-  async getAnalytics(query = {}) {
+  async getAnalytics(query: PlainRecord = {}) {
     const period = buildPeriod(query)
     const [trucksResult, costsResult, fuelResult, incidentsResult, profitabilityResult] = await Promise.all([
       this.fleetTrucks.findAll({ limit: 100, order: 'asc', sort: 'plate' }),
-      this.costs.findAll({ limit: 100, order: 'desc', sort: 'date', truckId: query.truckId }),
-      this.fuelRecords.findAll({ limit: 100, order: 'desc', sort: 'date', truckId: query.truckId }),
-      this.incidents.findAll({ limit: 100, order: 'desc', sort: 'occurredAt', truckId: query.truckId }),
-      this.freightProfitability.findAll({ limit: 100, order: 'desc', sort: 'createdAt', truckId: query.truckId }),
+      this.costs.findAll({ limit: 100, order: 'desc', sort: 'date', truckId: query.truckId as string }),
+      this.fuelRecords.findAll({ limit: 100, order: 'desc', sort: 'date', truckId: query.truckId as string }),
+      this.incidents.findAll({ limit: 100, order: 'desc', sort: 'occurredAt', truckId: query.truckId as string }),
+      this.freightProfitability.findAll({ limit: 100, order: 'desc', sort: 'createdAt', truckId: query.truckId as string }),
     ])
-    const trucks = trucksResult.data.filter((truck) => !query.truckId || truck.id === query.truckId)
+    const trucks = (trucksResult.data as PlainRecord[]).filter((truck) => !query.truckId || truck.id === query.truckId)
     const truckMap = new Map(trucks.map((truck) => [truck.id, truck]))
-    const ledger = []
-    const existingRelatedKeys = new Set()
+    const ledger: LedgerRecord[] = []
+    const existingRelatedKeys = new Set<string>()
 
-    costsResult.data
+    ;(costsResult.data as PlainRecord[])
       .filter((cost) => truckMap.has(cost.truckId))
       .filter((cost) => isDateInPeriod(cost.date, period))
       .forEach((cost) => {
@@ -65,14 +95,14 @@ export class TruckCostAnalyticsService {
         ledger.push(record)
 
         if (record.relatedEntityType && record.relatedEntityId) {
-          existingRelatedKeys.add(`${record.relatedEntityType}:${record.relatedEntityId}`)
+          existingRelatedKeys.add(`${String(record.relatedEntityType)}:${String(record.relatedEntityId)}`)
         }
       })
 
-    fuelResult.data
+    ;(fuelResult.data as PlainRecord[])
       .filter((record) => truckMap.has(record.truckId))
       .filter((record) => isDateInPeriod(record.date, period))
-      .filter((record) => !existingRelatedKeys.has(`fuel:${record.id}`))
+      .filter((record) => !existingRelatedKeys.has(`fuel:${String(record.id)}`))
       .forEach((record) => {
         ledger.push(
           normalizeCostRecord({
@@ -80,7 +110,7 @@ export class TruckCostAnalyticsService {
             costType: 'FUEL',
             date: record.date,
             description: `Carga combustible ${record.stationName || ''}`.trim(),
-            id: `fuel-${record.id}`,
+            id: `fuel-${String(record.id)}`,
             notes: record.notes,
             odometer: record.odometer,
             relatedEntityId: record.id,
@@ -92,11 +122,11 @@ export class TruckCostAnalyticsService {
         )
       })
 
-    incidentsResult.data
+    ;(incidentsResult.data as PlainRecord[])
       .filter((incident) => truckMap.has(incident.truckId))
       .filter((incident) => isDateInPeriod(incident.occurredAt, period))
-      .filter((incident) => incident.estimatedCost > 0)
-      .filter((incident) => !existingRelatedKeys.has(`incident:${incident.id}`))
+      .filter((incident) => Number(incident.estimatedCost) > 0)
+      .filter((incident) => !existingRelatedKeys.has(`incident:${String(incident.id)}`))
       .forEach((incident) => {
         ledger.push(
           normalizeCostRecord({
@@ -104,7 +134,7 @@ export class TruckCostAnalyticsService {
             costType: costTypeForIncident(incident.incidentType),
             date: incident.occurredAt,
             description: incident.description,
-            id: `incident-${incident.id}`,
+            id: `incident-${String(incident.id)}`,
             notes: incident.notes,
             relatedEntityId: incident.id,
             relatedEntityType: 'incident',
@@ -115,7 +145,7 @@ export class TruckCostAnalyticsService {
         )
       })
 
-    const freightMetrics = profitabilityResult.data
+    const freightMetrics = (profitabilityResult.data as PlainRecord[])
       .filter((item) => truckMap.has(item.truckId))
       .filter((item) => isDateInPeriod(item.createdAt || item.updatedAt, period, true))
 
@@ -157,8 +187,8 @@ export class TruckCostAnalyticsService {
   }
 }
 
-function addFreightCost(ledger, item, costType, amount, description) {
-  if (!amount || amount <= 0) {
+function addFreightCost(ledger: LedgerRecord[], item: PlainRecord, costType: string, amount: unknown, description: string) {
+  if (!amount || Number(amount) <= 0) {
     return
   }
 
@@ -168,7 +198,7 @@ function addFreightCost(ledger, item, costType, amount, description) {
       costType,
       date: item.createdAt || item.updatedAt || new Date().toISOString(),
       description,
-      id: `freight-${item.id}-${costType.toLowerCase()}`,
+      id: `freight-${String(item.id)}-${costType.toLowerCase()}`,
       relatedEntityId: item.freightId,
       relatedEntityType: 'freight-profitability',
       sourceModule: 'freight-profitability',
@@ -178,7 +208,7 @@ function addFreightCost(ledger, item, costType, amount, description) {
   )
 }
 
-function buildTruckSummary(truck, ledger, freightMetrics, period) {
+function buildTruckSummary(truck: PlainRecord, ledger: LedgerRecord[], freightMetrics: PlainRecord[], period: Period) {
   const truckCosts = ledger.filter((cost) => cost.truckId === truck.id)
   const truckFreight = freightMetrics.filter((item) => item.truckId === truck.id)
   const categories = buildCategorySummary(truckCosts)
@@ -211,12 +241,12 @@ function buildTruckSummary(truck, ledger, freightMetrics, period) {
       : undefined,
     totalCost,
     truckId: truck.id,
-    truckLabel: `${truck.plate} - ${truck.brand || ''} ${truck.model || ''}`.trim(),
+    truckLabel: `${String(truck.plate)} - ${truck.brand || ''} ${truck.model || ''}`.trim(),
   }
 }
 
-function buildCategorySummary(costs) {
-  const totals = costs.reduce((acc, cost) => {
+function buildCategorySummary(costs: LedgerRecord[]): CategorySummary[] {
+  const totals = costs.reduce<Record<string, number>>((acc, cost) => {
     acc[cost.costType] = (acc[cost.costType] || 0) + cost.amount
     return acc
   }, {})
@@ -240,7 +270,7 @@ function buildCategorySummary(costs) {
     })
 }
 
-function buildPeriod(query) {
+function buildPeriod(query: PlainRecord): Period {
   const now = new Date()
   const mode = ['annual', 'year'].includes(String(query.period || query.mode || '').toLowerCase()) ? 'annual' : 'monthly'
   const year = Number(query.year || now.getFullYear())
@@ -258,22 +288,22 @@ function buildPeriod(query) {
   }
 }
 
-function normalizeCostRecord(cost) {
+function normalizeCostRecord(cost: PlainRecord): LedgerRecord {
   return {
     ...cost,
     amount: Number(cost.amount || 0),
-    costType: cost.costType || 'OTHER',
-    date: cost.date || new Date().toISOString(),
-    label: COST_LABELS[cost.costType] || cost.costType || 'Otro',
+    costType: (cost.costType as string) || 'OTHER',
+    date: (cost.date as string) || new Date().toISOString(),
+    label: COST_LABELS[cost.costType as string] || (cost.costType as string) || 'Otro',
   }
 }
 
-function isDateInPeriod(value, period, includeMissing = false) {
+function isDateInPeriod(value: unknown, period: Period, includeMissing = false): boolean {
   if (!value) {
     return includeMissing
   }
 
-  const date = new Date(value)
+  const date = new Date(value as string)
 
   if (Number.isNaN(date.getTime())) {
     return includeMissing
@@ -282,19 +312,19 @@ function isDateInPeriod(value, period, includeMissing = false) {
   return date >= new Date(period.startDate) && date < new Date(period.endDate)
 }
 
-function costTypeForIncident(type) {
+function costTypeForIncident(type: unknown): string {
   if (type === 'FINE') {
     return 'FINE'
   }
 
-  if (['ACCIDENT', 'DAMAGE', 'ROAD_FAILURE'].includes(type)) {
+  if (['ACCIDENT', 'DAMAGE', 'ROAD_FAILURE'].includes(type as string)) {
     return 'REPAIR'
   }
 
   return 'OTHER'
 }
 
-function profitabilityStatus(costPerKm, netMargin, revenue) {
+function profitabilityStatus(costPerKm: number, netMargin: number, revenue: number): string {
   if (netMargin < 0 || costPerKm > 2400) {
     return 'EXPENSIVE'
   }
@@ -306,6 +336,6 @@ function profitabilityStatus(costPerKm, netMargin, revenue) {
   return 'PROFITABLE'
 }
 
-function sum(items, key) {
+function sum(items: PlainRecord[], key: string): number {
   return items.reduce((total, item) => total + Number(item[key] || 0), 0)
 }

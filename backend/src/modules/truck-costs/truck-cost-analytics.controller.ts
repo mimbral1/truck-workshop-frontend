@@ -6,7 +6,7 @@ const service = new TruckCostAnalyticsService()
 
 export const truckCostAnalyticsController = {
   analytics: asyncHandler(async (request, response) => {
-    const analytics = await service.getAnalytics(request.query)
+    const analytics = await service.getAnalytics(request.query as Record<string, unknown>)
 
     sendResponse(response, { data: analytics })
   }),

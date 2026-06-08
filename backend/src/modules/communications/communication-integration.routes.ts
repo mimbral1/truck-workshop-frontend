@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { Router } from 'express'
+import { Router, type Request } from 'express'
 import { resourceByName } from '../../config/resource-lookup.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
 import { asyncHandler } from '../../shared/http/async-handler.js'
 import { getActorName } from '../../shared/http/request-actor.js'
 import { sendResponse } from '../../shared/http/send-response.js'
+import type { PlainRecord } from '../../shared/types/domain.js'
 
 const MASKED_SECRET = '********'
 
@@ -14,6 +15,52 @@ const repositories = {
   messages: createRepository(resourceByName('communication-messages')),
   profiles: createRepository(resourceByName('communication-profiles')),
   providerConfigs: createRepository(resourceByName('communication-provider-configs')),
+}
+
+interface ProviderResult {
+  errorMessage?: string
+  fromAddress?: unknown
+  mode?: string
+  provider?: string
+  providerMessageId?: unknown
+  providerStatus?: string
+  simulated?: boolean
+}
+
+interface DispatchArgs {
+  body: string
+  config: PlainRecord | undefined
+  conversation: PlainRecord
+  profile: PlainRecord
+  subject: unknown
+}
+
+interface ProviderMessageArgs {
+  body: string
+  config: PlainRecord
+  conversation: PlainRecord
+  subject?: unknown
+}
+
+interface TestResult {
+  mode: string
+  ok: boolean
+  provider: unknown
+  status: string
+}
+
+interface InboundMessageArgs {
+  config: PlainRecord | undefined
+  inbound: PlainRecord
+  profile: PlainRecord | undefined
+  value: PlainRecord
+}
+
+interface FindOrCreateConversationArgs {
+  channel: string
+  contactAddress: string
+  contactName: string
+  profile: PlainRecord | undefined
 }
 
 export const communicationIntegrationRouter = Router()
@@ -28,7 +75,7 @@ communicationIntegrationRouter.get('/provider-configs', asyncHandler(async (requ
 }))
 
 communicationIntegrationRouter.get('/provider-configs/:id', asyncHandler(async (request, response) => {
-  const config = await getProviderConfig(request.params.id)
+  const config = await getProviderConfig(String(request.params.id))
 
   sendResponse(response, { data: maskProviderConfig(config) })
 }))
@@ -37,27 +84,27 @@ communicationIntegrationRouter.post('/provider-configs', asyncHandler(async (req
   const payload = normalizeProviderPayload(request.body, request)
   const config = await repositories.providerConfigs.create(payload)
 
-  sendResponse(response, { data: maskProviderConfig(config) }, 201)
+  sendResponse(response, { data: maskProviderConfig(config as PlainRecord) }, 201)
 }))
 
 communicationIntegrationRouter.patch('/provider-configs/:id', asyncHandler(async (request, response) => {
-  await getProviderConfig(request.params.id)
+  await getProviderConfig(String(request.params.id))
   const payload = normalizeProviderPayload(request.body, request, true)
-  const config = await repositories.providerConfigs.update(request.params.id, payload)
+  const config = await repositories.providerConfigs.update(String(request.params.id), payload)
 
-  sendResponse(response, { data: maskProviderConfig(config) })
+  sendResponse(response, { data: maskProviderConfig(config as PlainRecord) })
 }))
 
 communicationIntegrationRouter.delete('/provider-configs/:id', asyncHandler(async (request, response) => {
-  const config = await repositories.providerConfigs.remove(request.params.id)
+  const config = await repositories.providerConfigs.remove(String(request.params.id))
 
   sendResponse(response, { data: maskProviderConfig(config) })
 }))
 
 communicationIntegrationRouter.post('/provider-configs/:id/test', asyncHandler(async (request, response) => {
-  const config = await getProviderConfig(request.params.id)
+  const config = await getProviderConfig(String(request.params.id))
   const testResult = await testProviderConfig(config)
-  const savedConfig = await repositories.providerConfigs.update(config.id, {
+  const savedConfig = await repositories.providerConfigs.update(String(config.id), {
     lastError: testResult.ok ? '' : testResult.status,
     lastTestAt: new Date().toISOString(),
     lastTestStatus: testResult.status,
@@ -66,7 +113,7 @@ communicationIntegrationRouter.post('/provider-configs/:id/test', asyncHandler(a
 
   sendResponse(response, {
     data: {
-      config: maskProviderConfig(savedConfig),
+      config: maskProviderConfig(savedConfig as PlainRecord),
       result: testResult,
     },
   })
@@ -98,7 +145,7 @@ communicationIntegrationRouter.post('/webhooks/whatsapp', asyncHandler(async (re
   sendResponse(response, { data: { ok: true } })
 }))
 
-async function sendCommunicationMessage(payload, request) {
+async function sendCommunicationMessage(payload: PlainRecord, request: Request): Promise<PlainRecord> {
   const conversation = await getConversation(payload.conversationId)
   const profile = await getProfile(payload.profileId || conversation.profileId)
   const config = await findProviderConfig(conversation.channel, profile.id)
@@ -133,8 +180,8 @@ async function sendCommunicationMessage(payload, request) {
     toAddress: conversation.contactAddress,
     toName: conversation.contactName,
     updatedBy: payload.updatedBy || getActorName(request),
-  })
-  const updatedConversation = await repositories.conversations.update(conversation.id, {
+  }) as PlainRecord
+  const updatedConversation = await repositories.conversations.update(String(conversation.id), {
     lastMessageAt: sentAt,
     lastMessagePreview: message.status === 'failed' ? `Error envio: ${message.body}` : message.body,
     status: 'open',
@@ -155,7 +202,7 @@ async function sendCommunicationMessage(payload, request) {
   }
 }
 
-async function dispatchWithProvider({ body, config, conversation, profile, subject }) {
+async function dispatchWithProvider({ body, config, conversation, profile, subject }: DispatchArgs): Promise<ProviderResult> {
   if (!body) {
     throw new AppError('El mensaje no puede estar vacio', 400)
   }
@@ -185,13 +232,13 @@ async function dispatchWithProvider({ body, config, conversation, profile, subje
       errorMessage: error instanceof Error ? error.message : 'No se pudo enviar el mensaje',
       fromAddress: config.fromAddress || profile.address,
       mode: 'live',
-      provider: config.provider,
+      provider: config.provider as string,
       providerStatus: 'failed',
     }
   }
 }
 
-async function sendWhatsAppMessage({ body, config, conversation }) {
+async function sendWhatsAppMessage({ body, config, conversation }: ProviderMessageArgs): Promise<ProviderResult> {
   requireFields(config, ['whatsappPhoneNumberId', 'whatsappAccessToken'], 'WhatsApp')
   const apiVersion = config.whatsappApiVersion || 'v25.0'
   const response = await fetch(`https://graph.facebook.com/${apiVersion}/${config.whatsappPhoneNumberId}/messages`, {
@@ -221,16 +268,16 @@ async function sendWhatsAppMessage({ body, config, conversation }) {
     fromAddress: config.fromAddress,
     mode: 'live',
     provider: 'whatsapp_cloud',
-    providerMessageId: data?.messages?.[0]?.id,
+    providerMessageId: (data?.messages as Array<PlainRecord> | undefined)?.[0]?.id,
     providerStatus: 'accepted',
   }
 }
 
-async function sendOutlookMessage({ body, config, conversation, subject }) {
+async function sendOutlookMessage({ body, config, conversation, subject }: ProviderMessageArgs): Promise<ProviderResult> {
   requireFields(config, ['outlookTenantId', 'outlookClientId', 'outlookClientSecret', 'outlookUserPrincipalName'], 'Outlook')
   const token = await getOutlookAccessToken(config)
   const response = await fetch(
-    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.outlookUserPrincipalName)}/sendMail`,
+    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(String(config.outlookUserPrincipalName))}/sendMail`,
     {
       body: JSON.stringify({
         message: {
@@ -271,11 +318,11 @@ async function sendOutlookMessage({ body, config, conversation, subject }) {
   }
 }
 
-async function getOutlookAccessToken(config) {
-  const response = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(config.outlookTenantId)}/oauth2/v2.0/token`, {
+async function getOutlookAccessToken(config: PlainRecord): Promise<string> {
+  const response = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(String(config.outlookTenantId))}/oauth2/v2.0/token`, {
     body: new URLSearchParams({
-      client_id: config.outlookClientId,
-      client_secret: config.outlookClientSecret,
+      client_id: String(config.outlookClientId),
+      client_secret: String(config.outlookClientSecret),
       grant_type: 'client_credentials',
       scope: 'https://graph.microsoft.com/.default',
     }),
@@ -290,10 +337,10 @@ async function getOutlookAccessToken(config) {
     throw new AppError(providerErrorMessage(data, 'No se pudo obtener token de Microsoft Graph'), response.status)
   }
 
-  return data.access_token
+  return data.access_token as string
 }
 
-async function testProviderConfig(config) {
+async function testProviderConfig(config: PlainRecord): Promise<TestResult> {
   if (config.deliveryMode !== 'live') {
     return {
       mode: 'simulation',
@@ -333,28 +380,28 @@ async function testProviderConfig(config) {
   }
 
   return {
-    mode: config.deliveryMode,
+    mode: config.deliveryMode as string,
     ok: false,
     provider: config.provider,
     status: 'unsupported-provider',
   }
 }
 
-async function ingestWhatsAppWebhook(payload) {
+async function ingestWhatsAppWebhook(payload: PlainRecord): Promise<void> {
   const entries = Array.isArray(payload?.entry) ? payload.entry : []
 
-  for (const entry of entries) {
-    for (const change of entry.changes || []) {
-      const value = change.value || {}
-      const phoneNumberId = value.metadata?.phone_number_id
+  for (const entry of entries as PlainRecord[]) {
+    for (const change of (entry.changes || []) as PlainRecord[]) {
+      const value = (change.value || {}) as PlainRecord
+      const phoneNumberId = (value.metadata as PlainRecord | undefined)?.phone_number_id
 
-      await updateWhatsAppStatuses(value.statuses || [])
+      await updateWhatsAppStatuses((value.statuses || []) as PlainRecord[])
 
       if (Array.isArray(value.messages) && value.messages.length > 0) {
         const config = phoneNumberId ? await findProviderConfigByPhoneNumberId(phoneNumberId) : undefined
-        const profile = config?.profileId ? await repositories.profiles.findById(config.profileId) : undefined
+        const profile = config?.profileId ? (await repositories.profiles.findById(String(config.profileId))) ?? undefined : undefined
 
-        for (const inbound of value.messages) {
+        for (const inbound of value.messages as PlainRecord[]) {
           await createInboundWhatsAppMessage({ config, inbound, profile, value })
         }
       }
@@ -362,20 +409,20 @@ async function ingestWhatsAppWebhook(payload) {
   }
 }
 
-async function updateWhatsAppStatuses(statuses) {
+async function updateWhatsAppStatuses(statuses: PlainRecord[]): Promise<void> {
   for (const status of statuses) {
     if (!status?.id) {
       continue
     }
 
-    const result = await repositories.messages.findAll({ limit: 1, providerMessageId: status.id })
+    const result = await repositories.messages.findAll({ limit: 1, providerMessageId: status.id as string })
     const message = result.data[0]
 
     if (!message) {
       continue
     }
 
-    await repositories.messages.update(message.id, {
+    await repositories.messages.update(String(message.id), {
       deliveredAt: status.status === 'delivered' ? isoFromUnix(status.timestamp) : message.deliveredAt,
       providerStatus: status.status,
       readAt: status.status === 'read' ? isoFromUnix(status.timestamp) : message.readAt,
@@ -384,17 +431,21 @@ async function updateWhatsAppStatuses(statuses) {
   }
 }
 
-async function createInboundWhatsAppMessage({ config, inbound, profile, value }) {
-  const contact = value.contacts?.find((item) => item.wa_id === inbound.from) || value.contacts?.[0]
-  const contactName = contact?.profile?.name || inbound.from
+async function createInboundWhatsAppMessage({ config, inbound, profile, value }: InboundMessageArgs): Promise<void> {
+  const contacts = value.contacts as PlainRecord[] | undefined
+  const contact = contacts?.find((item) => item.wa_id === inbound.from) || contacts?.[0]
+  const contactName = (contact?.profile as PlainRecord | undefined)?.name || inbound.from
   const contactAddress = `+${inbound.from}`
   const conversation = await findOrCreateInboundConversation({
     channel: 'whatsapp',
     contactAddress,
-    contactName,
+    contactName: String(contactName),
     profile,
   })
-  const body = inbound.text?.body || inbound.button?.text || inbound.interactive?.button_reply?.title || '[Mensaje WhatsApp no textual]'
+  const body = (inbound.text as PlainRecord | undefined)?.body
+    || (inbound.button as PlainRecord | undefined)?.text
+    || ((inbound.interactive as PlainRecord | undefined)?.button_reply as PlainRecord | undefined)?.title
+    || '[Mensaje WhatsApp no textual]'
 
   await repositories.messages.create({
     attachments: [],
@@ -418,7 +469,7 @@ async function createInboundWhatsAppMessage({ config, inbound, profile, value })
     updatedBy: 'Webhook WhatsApp',
   })
 
-  await repositories.conversations.update(conversation.id, {
+  await repositories.conversations.update(String(conversation.id), {
     lastMessageAt: isoFromUnix(inbound.timestamp),
     lastMessagePreview: body,
     status: 'open',
@@ -427,7 +478,7 @@ async function createInboundWhatsAppMessage({ config, inbound, profile, value })
   })
 }
 
-async function findOrCreateInboundConversation({ channel, contactAddress, contactName, profile }) {
+async function findOrCreateInboundConversation({ channel, contactAddress, contactName, profile }: FindOrCreateConversationArgs): Promise<PlainRecord> {
   const existing = await repositories.conversations.findAll({ channel, limit: 100 })
   const current = existing.data.find((conversation) => conversation.contactAddress === contactAddress)
 
@@ -454,24 +505,24 @@ async function findOrCreateInboundConversation({ channel, contactAddress, contac
     tags: ['whatsapp', 'webhook'],
     unreadCount: 1,
     updatedBy: 'Webhook WhatsApp',
-  })
+  }) as Promise<PlainRecord>
 }
 
-async function findProviderConfig(channel, profileId) {
-  const result = await repositories.providerConfigs.findAll({ channel, limit: 100 })
+async function findProviderConfig(channel: unknown, profileId: unknown): Promise<PlainRecord | undefined> {
+  const result = await repositories.providerConfigs.findAll({ channel: channel as string, limit: 100 })
 
   return result.data.find((config) => config.isActive && config.profileId === profileId)
     || result.data.find((config) => config.isActive)
 }
 
-async function findProviderConfigByPhoneNumberId(phoneNumberId) {
+async function findProviderConfigByPhoneNumberId(phoneNumberId: unknown): Promise<PlainRecord | undefined> {
   const result = await repositories.providerConfigs.findAll({ channel: 'whatsapp', limit: 100 })
 
   return result.data.find((config) => config.whatsappPhoneNumberId === phoneNumberId)
 }
 
-async function getConversation(id) {
-  const conversation = await repositories.conversations.findById(id)
+async function getConversation(id: unknown): Promise<PlainRecord> {
+  const conversation = await repositories.conversations.findById(String(id))
 
   if (!conversation) {
     throw new AppError('Conversacion no encontrada', 404)
@@ -480,8 +531,8 @@ async function getConversation(id) {
   return conversation
 }
 
-async function getProfile(id) {
-  const profile = await repositories.profiles.findById(id)
+async function getProfile(id: unknown): Promise<PlainRecord> {
+  const profile = await repositories.profiles.findById(String(id))
 
   if (!profile) {
     throw new AppError('Perfil de comunicacion no encontrado', 404)
@@ -490,7 +541,7 @@ async function getProfile(id) {
   return profile
 }
 
-async function getProviderConfig(id) {
+async function getProviderConfig(id: string): Promise<PlainRecord> {
   const config = await repositories.providerConfigs.findById(id)
 
   if (!config) {
@@ -500,8 +551,8 @@ async function getProviderConfig(id) {
   return config
 }
 
-function normalizeProviderPayload(payload, request, partial = false) {
-  const cleanPayload = { ...payload }
+function normalizeProviderPayload(payload: PlainRecord, request: Request, partial = false): PlainRecord {
+  const cleanPayload: PlainRecord = { ...payload }
   const secretFields = ['whatsappAccessToken', 'whatsappAppSecret', 'outlookClientSecret']
 
   secretFields.forEach((field) => {
@@ -524,7 +575,7 @@ function normalizeProviderPayload(payload, request, partial = false) {
   return cleanPayload
 }
 
-function maskProviderConfig(config) {
+function maskProviderConfig(config: PlainRecord): PlainRecord {
   return {
     ...config,
     hasOutlookClientSecret: Boolean(config.outlookClientSecret),
@@ -536,7 +587,7 @@ function maskProviderConfig(config) {
   }
 }
 
-function getMessageStatusFromProvider(providerResult) {
+function getMessageStatusFromProvider(providerResult: ProviderResult): string {
   if (providerResult.providerStatus === 'failed') {
     return 'failed'
   }
@@ -552,7 +603,7 @@ function getMessageStatusFromProvider(providerResult) {
   return 'sent'
 }
 
-function requireFields(config, fields, label) {
+function requireFields(config: PlainRecord, fields: string[], label: string): void {
   const missing = fields.filter((field) => !config[field])
 
   if (missing.length > 0) {
@@ -560,23 +611,25 @@ function requireFields(config, fields, label) {
   }
 }
 
-async function safeJson(response) {
+async function safeJson(response: Response): Promise<PlainRecord | null> {
   try {
-    return await response.json()
+    return (await response.json()) as PlainRecord
   } catch {
     return null
   }
 }
 
-function providerErrorMessage(data, fallback) {
-  return data?.error?.message || data?.error_description || data?.message || fallback
+function providerErrorMessage(data: PlainRecord | null, fallback: string): string {
+  const error = data?.error as PlainRecord | undefined
+
+  return String(error?.message || data?.error_description || data?.message || fallback)
 }
 
-function normalizePhone(value) {
+function normalizePhone(value: unknown): string {
   return String(value || '').replace(/[^\d]/g, '')
 }
 
-function mapWhatsAppStatus(status) {
+function mapWhatsAppStatus(status: unknown): string {
   if (status === 'read') {
     return 'read'
   }
@@ -592,7 +645,7 @@ function mapWhatsAppStatus(status) {
   return 'sent'
 }
 
-function isoFromUnix(value) {
+function isoFromUnix(value: unknown): string {
   const timestamp = Number(value)
 
   if (!Number.isFinite(timestamp)) {

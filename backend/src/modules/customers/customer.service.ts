@@ -1,6 +1,7 @@
 import { customerResource, freightQuoteResource, freightRequestResource, quoteResource } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
+import type { ListQuery, PaginatedResult, PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 import { stripImmutableFields } from '../../shared/utils/payload-sanitizers.js'
 
 const customerStatuses = new Set(['active', 'inactive', 'suspended'])
@@ -9,7 +10,32 @@ const cargoTypes = new Set(['GENERAL', 'PALLETIZED', 'BULK', 'FRAGILE', 'REFRIGE
 const activeFreightStatuses = new Set(['NEW', 'QUOTING', 'QUOTE_SENT', 'APPROVED', 'ASSIGNED', 'IN_TRANSIT'])
 const quoteStatusesUsingCredit = new Set(['DRAFT', 'SENT', 'APPROVED'])
 
+interface NormalizeOptions {
+  partial?: boolean
+}
+
+interface CreditQuoteReference {
+  customerId: unknown
+  customerName: unknown
+  id: unknown
+  quoteNumber: unknown
+  source: string
+  status: unknown
+  total: number
+}
+
+interface CreditDecision {
+  label: string
+  message: string
+  status: string
+}
+
 export class CustomerService {
+  private readonly customers: ResourceRepositoryContract
+  private readonly freightQuotes: ResourceRepositoryContract
+  private readonly freightRequests: ResourceRepositoryContract
+  private readonly workshopQuotes: ResourceRepositoryContract
+
   constructor() {
     this.customers = createRepository(customerResource)
     this.freightQuotes = createRepository(freightQuoteResource)
@@ -17,11 +43,11 @@ export class CustomerService {
     this.workshopQuotes = createRepository(quoteResource)
   }
 
-  list(query) {
+  list(query: ListQuery): Promise<PaginatedResult> {
     return this.customers.findAll(query)
   }
 
-  async get(id) {
+  async get(id: string): Promise<PlainRecord> {
     const customer = await this.customers.findById(id)
 
     if (!customer) {
@@ -31,7 +57,7 @@ export class CustomerService {
     return customer
   }
 
-  create(payload, actorName) {
+  create(payload: PlainRecord, actorName: string): Promise<PlainRecord | null> {
     const normalizedPayload = normalizeCustomerPayload(payload)
 
     return this.customers.create({
@@ -41,7 +67,7 @@ export class CustomerService {
     })
   }
 
-  update(id, payload, actorName) {
+  update(id: string, payload: PlainRecord, actorName: string): Promise<PlainRecord | null> {
     const editablePayload = stripImmutableFields(payload, ['deletedBy'])
 
     return this.customers.update(id, {
@@ -50,7 +76,7 @@ export class CustomerService {
     })
   }
 
-  async remove(id, actorName) {
+  async remove(id: string, actorName: string): Promise<PlainRecord> {
     const customer = await this.get(id)
     const activeRequests = await this.findActiveFreightRequests(customer)
 
@@ -69,17 +95,17 @@ export class CustomerService {
     return this.customers.remove(id)
   }
 
-  async findActiveFreightRequests(customer) {
+  async findActiveFreightRequests(customer: PlainRecord): Promise<PlainRecord[]> {
     const result = await this.freightRequests.findAll({ limit: 100, order: 'desc', sort: 'createdAt' })
 
     return result.data.filter((request) => {
       const matchesCustomer = request.customerId === customer.id || request.customerName === customer.name
 
-      return matchesCustomer && activeFreightStatuses.has(request.status)
+      return matchesCustomer && activeFreightStatuses.has(String(request.status))
     })
   }
 
-  async getCreditSummary(id) {
+  async getCreditSummary(id: string): Promise<PlainRecord> {
     const customer = await this.get(id)
     const [freightQuotesResult, workshopQuotesResult] = await Promise.all([
       this.freightQuotes.findAll({ limit: 100, order: 'desc', sort: 'createdAt' }),
@@ -91,7 +117,7 @@ export class CustomerService {
     const workshopQuotes = workshopQuotesResult.data
       .filter((quote) => matchesCustomerReference(customer, quote))
       .map((quote) => toCreditQuoteReference(quote, 'workshop'))
-    const activeQuotes = [...freightQuotes, ...workshopQuotes].filter((quote) => quoteStatusesUsingCredit.has(quote.status))
+    const activeQuotes = [...freightQuotes, ...workshopQuotes].filter((quote) => quoteStatusesUsingCredit.has(String(quote.status)))
     const quoteExposure = activeQuotes.reduce((total, quote) => total + normalizeAmount(quote.total), 0)
     const creditLimit = normalizeAmount(customer.creditLimit)
     const creditUsed = normalizeAmount(customer.creditUsed)
@@ -121,7 +147,7 @@ export class CustomerService {
   }
 }
 
-function matchesCustomerReference(customer, record) {
+function matchesCustomerReference(customer: PlainRecord, record: PlainRecord): boolean {
   if (record.customerId && record.customerId === customer.id) {
     return true
   }
@@ -129,7 +155,7 @@ function matchesCustomerReference(customer, record) {
   return normalizeText(record.customerName) === normalizeText(customer.name)
 }
 
-function toCreditQuoteReference(quote, source) {
+function toCreditQuoteReference(quote: PlainRecord, source: string): CreditQuoteReference {
   return {
     customerId: quote.customerId,
     customerName: quote.customerName,
@@ -141,7 +167,7 @@ function toCreditQuoteReference(quote, source) {
   }
 }
 
-function buildCreditDecision(customer, projectedUsed, projectedUsagePercent) {
+function buildCreditDecision(customer: PlainRecord, projectedUsed: number, projectedUsagePercent: number): CreditDecision {
   if (customer.status === 'suspended') {
     return {
       label: 'Credito suspendido',
@@ -181,12 +207,12 @@ function buildCreditDecision(customer, projectedUsed, projectedUsagePercent) {
   }
 }
 
-function normalizeText(value) {
+function normalizeText(value: unknown): string {
   return String(value || '').trim().toLowerCase()
 }
 
-function normalizeCustomerPayload(payload, options = {}) {
-  const normalized = { ...payload }
+function normalizeCustomerPayload(payload: PlainRecord, options: NormalizeOptions = {}): PlainRecord {
+  const normalized: PlainRecord = { ...payload }
 
   if (payload.name !== undefined) {
     normalized.name = String(payload.name || '').trim()
@@ -233,7 +259,7 @@ function normalizeCustomerPayload(payload, options = {}) {
   }
 
   if (!options.partial || payload.priceList !== undefined) {
-    normalized.priceList = normalizePriceList(payload.priceList, normalized.freightTypes)
+    normalized.priceList = normalizePriceList(payload.priceList, normalized.freightTypes as string[] | undefined)
   }
 
   if (!options.partial || payload.creditEnabled !== undefined) {
@@ -263,7 +289,7 @@ function normalizeCustomerPayload(payload, options = {}) {
   return normalized
 }
 
-function normalizeCargoTypes(value) {
+function normalizeCargoTypes(value: unknown): string[] {
   const types = normalizeList(value)
     .map((item) => item.toUpperCase())
     .filter((item) => cargoTypes.has(item))
@@ -271,10 +297,11 @@ function normalizeCargoTypes(value) {
   return types.length > 0 ? [...new Set(types)] : ['GENERAL']
 }
 
-function normalizePriceList(value, freightTypes = ['GENERAL']) {
+function normalizePriceList(value: unknown, freightTypes: string[] = ['GENERAL']): PlainRecord[] {
   const items = Array.isArray(value) ? value : []
   const normalizedItems = items
-    .map((item, index) => {
+    .map((rawItem, index) => {
+      const item = rawItem as PlainRecord
       const cargoType = String(item.cargoType || freightTypes[index] || 'GENERAL').toUpperCase()
 
       if (!cargoTypes.has(cargoType)) {
@@ -292,7 +319,7 @@ function normalizePriceList(value, freightTypes = ['GENERAL']) {
         notes: item.notes || '',
       }
     })
-    .filter(Boolean)
+    .filter(Boolean) as PlainRecord[]
 
   if (normalizedItems.length > 0) {
     return normalizedItems
@@ -310,13 +337,13 @@ function normalizePriceList(value, freightTypes = ['GENERAL']) {
   }))
 }
 
-function normalizeAmount(value) {
+function normalizeAmount(value: unknown): number {
   const amount = Number(value || 0)
 
   return Number.isFinite(amount) ? Math.max(0, amount) : 0
 }
 
-function parseBoolean(value) {
+function parseBoolean(value: unknown): boolean {
   if (typeof value === 'boolean') {
     return value
   }
@@ -324,7 +351,7 @@ function parseBoolean(value) {
   return ['true', '1', 'yes', 'y', 'on'].includes(String(value || '').toLowerCase())
 }
 
-function normalizeList(value) {
+function normalizeList(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim()).filter(Boolean)
   }
@@ -339,7 +366,7 @@ function normalizeList(value) {
     .filter(Boolean)
 }
 
-function normalizeOption(value, allowedValues, fallback, message) {
+function normalizeOption(value: unknown, allowedValues: Set<string>, fallback: string, message: string): string {
   const normalizedValue = String(value || fallback)
 
   if (!allowedValues.has(normalizedValue)) {
@@ -349,7 +376,7 @@ function normalizeOption(value, allowedValues, fallback, message) {
   return normalizedValue
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) {
     return min
   }

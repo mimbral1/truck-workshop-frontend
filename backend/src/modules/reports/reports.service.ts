@@ -1,6 +1,7 @@
 import { resourceByName } from '../../config/resource-lookup.js'
 import { workshopCaseResource } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
+import type { PlainRecord } from '../../shared/types/domain.js'
 
 const repositories = {
   cases: createRepository(workshopCaseResource),
@@ -15,6 +16,11 @@ const repositories = {
   truckCosts: createRepository(resourceByName('truck-costs')),
   truckDocuments: createRepository(resourceByName('truck-documents')),
   warehouseStock: createRepository(resourceByName('warehouse-stock')),
+}
+
+interface DocumentExpirationsQuery {
+  days: number
+  documentType: string
 }
 
 export async function buildReportsOverview() {
@@ -134,15 +140,15 @@ export async function buildTireReport() {
   }
 }
 
-export async function buildDocumentExpirationsReport({ days, documentType }) {
+export async function buildDocumentExpirationsReport({ days, documentType }: DocumentExpirationsQuery) {
   const [documents, trucks] = await Promise.all([
     repositories.truckDocuments.findAll({ documentType, limit: 100, sort: 'expiresAt', order: 'asc' }),
     repositories.fleetTrucks.findAll({ limit: 100, sort: 'plate', order: 'asc' }),
   ])
   const now = new Date()
-  const rows = trucks.data
+  const rows = (trucks.data as PlainRecord[])
     .map((truck) => {
-      const document = documents.data
+      const document = (documents.data as PlainRecord[])
         .filter((item) => item.truckId === truck.id && item.documentType === documentType)
         .sort((first, second) => dateValue(first.expiresAt) - dateValue(second.expiresAt))[0]
 
@@ -150,13 +156,13 @@ export async function buildDocumentExpirationsReport({ days, documentType }) {
         return {
           assignedDriverName: truck.assignedDriverName,
           blocker: truck.mainBlocker,
-          daysUntilExpiration: null,
-          documentId: null,
-          documentNumber: null,
+          daysUntilExpiration: null as number | null,
+          documentId: null as unknown,
+          documentNumber: null as unknown,
           documentType,
-          expiresAt: null,
+          expiresAt: null as unknown,
           model: `${truck.brand || ''} ${truck.model || ''}`.trim(),
-          notes: 'No existe revision tecnica cargada para esta unidad.',
+          notes: 'No existe revision tecnica cargada para esta unidad.' as unknown,
           operationalStatus: truck.operationalStatus,
           plate: truck.plate,
           priority: 'blocked',
@@ -166,19 +172,19 @@ export async function buildDocumentExpirationsReport({ days, documentType }) {
         }
       }
 
-      const daysUntilExpiration = document.expiresAt ? daysBetween(now, new Date(document.expiresAt)) : null
-      const status = getDocumentStatus(daysUntilExpiration, document.status)
+      const daysUntilExpiration = document.expiresAt ? daysBetween(now, new Date(document.expiresAt as string)) : null
+      const status = getDocumentStatus(daysUntilExpiration, document.status as string)
 
       return {
         assignedDriverName: truck.assignedDriverName,
         blocker: truck.mainBlocker,
         daysUntilExpiration,
-        documentId: document.id,
-        documentNumber: document.documentNumber,
+        documentId: document.id as unknown,
+        documentNumber: document.documentNumber as unknown,
         documentType,
-        expiresAt: document.expiresAt,
+        expiresAt: document.expiresAt as unknown,
         model: `${truck.brand || ''} ${truck.model || ''}`.trim(),
-        notes: document.notes,
+        notes: document.notes as unknown,
         operationalStatus: truck.operationalStatus,
         plate: truck.plate,
         priority: getDocumentPriority(status, daysUntilExpiration),
@@ -204,7 +210,25 @@ export async function buildDocumentExpirationsReport({ days, documentType }) {
   }
 }
 
-export async function buildDriverTripSheetsReport(query = {}) {
+interface DriverTripSheetGroup {
+  approvedSheets: number
+  driverId: unknown
+  driverName: unknown
+  netMargin: number
+  paidSheets: number
+  parkingCost: number
+  performanceScore: number
+  revenue: number
+  sheets: number
+  submittedSheets: number
+  tipCost: number
+  tollCost: number
+  totalExpenses: number
+  totalKm: number
+  waitingHours: number
+}
+
+export async function buildDriverTripSheetsReport(query: PlainRecord = {}) {
   const status = String(query.status || 'all')
   const driverId = String(query.driverId || 'all')
   const result = await repositories.driverTripSheets.findAll({
@@ -213,9 +237,9 @@ export async function buildDriverTripSheetsReport(query = {}) {
     sort: 'tripDate',
     status,
   })
-  const rowsByDriver = result.data.reduce((groups, sheet) => {
-    const key = sheet.driverId || 'sin-chofer'
-    const current = groups.get(key) || {
+  const rowsByDriver = (result.data as PlainRecord[]).reduce((groups, sheet) => {
+    const key = (sheet.driverId as unknown) || 'sin-chofer'
+    const current: DriverTripSheetGroup = groups.get(key) || {
       approvedSheets: 0,
       driverId: key,
       driverName: sheet.driverName || 'Sin chofer',
@@ -249,7 +273,7 @@ export async function buildDriverTripSheetsReport(query = {}) {
     groups.set(key, current)
 
     return groups
-  }, new Map())
+  }, new Map<unknown, DriverTripSheetGroup>())
   const rows = [...rowsByDriver.values()]
     .map((row) => ({
       ...row,
@@ -274,29 +298,29 @@ export async function buildDriverTripSheetsReport(query = {}) {
   }
 }
 
-function sum(items, field) {
+function sum(items: PlainRecord[], field: string): number {
   return items.reduce((total, item) => total + Number(item[field] || 0), 0)
 }
 
-function round(value) {
+function round(value: number): number {
   return Math.round(value * 100) / 100
 }
 
-function dateValue(value) {
+function dateValue(value: unknown): number {
   if (!value) {
     return Number.MAX_SAFE_INTEGER
   }
 
-  return new Date(value).getTime()
+  return new Date(value as string | number | Date).getTime()
 }
 
-function daysBetween(start, end) {
+function daysBetween(start: Date, end: Date): number {
   const dayMs = 24 * 60 * 60 * 1000
 
   return Math.ceil((startOfDay(end).getTime() - startOfDay(start).getTime()) / dayMs)
 }
 
-function startOfDay(value) {
+function startOfDay(value: Date): Date {
   const date = new Date(value)
 
   date.setHours(0, 0, 0, 0)
@@ -304,7 +328,7 @@ function startOfDay(value) {
   return date
 }
 
-function getDocumentStatus(daysUntilExpiration, currentStatus) {
+function getDocumentStatus(daysUntilExpiration: number | null, currentStatus: string): string {
   if (currentStatus === 'MISSING' || daysUntilExpiration === null) {
     return 'MISSING'
   }
@@ -324,7 +348,7 @@ function getDocumentStatus(daysUntilExpiration, currentStatus) {
   return 'VALID'
 }
 
-function getDocumentPriority(status, daysUntilExpiration) {
+function getDocumentPriority(status: string, daysUntilExpiration: number | null): string {
   if (status === 'MISSING' || status === 'EXPIRED') {
     return 'blocked'
   }
@@ -340,7 +364,7 @@ function getDocumentPriority(status, daysUntilExpiration) {
   return 'planned'
 }
 
-function getDocumentAction(status, daysUntilExpiration) {
+function getDocumentAction(status: string, daysUntilExpiration: number | null): string {
   if (status === 'MISSING') {
     return 'Cargar revision tecnica y validar disponibilidad antes de asignar fletes.'
   }
@@ -360,8 +384,11 @@ function getDocumentAction(status, daysUntilExpiration) {
   return 'Planificar ventana preventiva sin afectar fletes comprometidos.'
 }
 
-function compareExpirationRows(first, second) {
-  const priorityWeight = {
+function compareExpirationRows(
+  first: { priority: string; daysUntilExpiration: number | null },
+  second: { priority: string; daysUntilExpiration: number | null },
+): number {
+  const priorityWeight: Record<string, number> = {
     blocked: 0,
     urgent: 1,
     warning: 2,

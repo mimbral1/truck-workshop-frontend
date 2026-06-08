@@ -1,23 +1,64 @@
 import { freightPricingSettingsResource } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
+import type { ListQuery, PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 import { fuelPriceService } from '../fuel-prices/fuel-price.service.js'
 import { MapsService } from '../maps/maps.service.js'
-import { DEFAULT_CARGO_SURCHARGES, DEFAULT_FREIGHT_PRICING_SETTINGS } from './freight-pricing.defaults.js'
+import {
+  DEFAULT_CARGO_SURCHARGES,
+  DEFAULT_FREIGHT_PRICING_SETTINGS,
+  type FreightPricingSettings,
+} from './freight-pricing.defaults.js'
 
 const mapsService = new MapsService()
 
+interface NormalizedSettings extends FreightPricingSettings {
+  cargoSurcharges: FreightPricingSettings['cargoSurcharges'] & Record<string, number>
+  [key: string]: unknown
+}
+
+interface CalculationSettings extends NormalizedSettings {
+  fallbackDieselPricePerLiter: number
+  fuelPriceSource: PlainRecord
+}
+
+interface LineItem {
+  id: string
+  label: string
+  quantity: number
+  total: number
+  unitAmount: number
+}
+
+interface BuildLineItemsArgs {
+  cargoTypeSurcharge: number
+  distanceCost: number
+  fuelCost: number
+  fuelLiters: number
+  loadingCost: number
+  marginAmount: number
+  operationCost: number
+  settings: CalculationSettings
+  tollCharge: number
+  tollCost: number
+  unloadingCost: number
+  waitingCost: number
+  waitingHours: number
+}
+
 export class FreightPricingService {
+  private readonly settings: ResourceRepositoryContract
+
   constructor() {
     this.settings = createRepository(freightPricingSettingsResource)
   }
 
-  async getActiveSettings() {
+  async getActiveSettings(): Promise<NormalizedSettings> {
     const result = await this.settings.findAll({
       active: true,
       limit: 10,
       order: 'desc',
       sort: 'updatedAt',
-    })
+    } as unknown as ListQuery)
     const active = result.data[0]
 
     if (active) {
@@ -30,10 +71,10 @@ export class FreightPricingService {
       updatedBy: 'Sistema',
     })
 
-    return normalizeSettings(created)
+    return normalizeSettings(created || {})
   }
 
-  async updateActiveSettings(payload, actorName = 'Sistema') {
+  async updateActiveSettings(payload: PlainRecord, actorName = 'Sistema'): Promise<PlainRecord | null> {
     const current = await this.getActiveSettings()
     const nextSettings = normalizeSettings({
       ...current,
@@ -41,32 +82,33 @@ export class FreightPricingService {
       active: true,
       cargoSurcharges: {
         ...current.cargoSurcharges,
-        ...(payload.cargoSurcharges || {}),
+        ...((payload.cargoSurcharges as PlainRecord | undefined) || {}),
       },
       updatedBy: actorName,
     })
 
-    return this.settings.update(current.id, nextSettings)
+    return this.settings.update(String(current.id), nextSettings)
   }
 
-  async calculate(payload = {}) {
+  async calculate(payload: PlainRecord = {}): Promise<PlainRecord> {
     const settings = await this.getActiveSettings()
-    const fuelPriceSource = await fuelPriceService.getCurrentPrice({
+    const fuelPriceSource = (await fuelPriceService.getCurrentPrice({
       fuelType: 'DIESEL',
-      regionCode: payload.fuelRegionCode,
-    })
+      regionCode: payload.fuelRegionCode as string | undefined,
+    })) as unknown as PlainRecord
     const dieselPricePerLiter = Math.round(positiveNumber(fuelPriceSource.pricePerLiter) || settings.dieselPricePerLiter)
-    const calculationSettings = {
+    const calculationSettings: CalculationSettings = {
       ...settings,
       dieselPricePerLiter,
       fallbackDieselPricePerLiter: settings.dieselPricePerLiter,
       fuelPriceSource,
     }
-    const route = await this.resolveRoute(payload)
+    const route = (await this.resolveRoute(payload)) as PlainRecord | null
+    const tolls = route?.tolls as PlainRecord | undefined
     const estimatedKm = positiveNumber(route?.distanceKm ?? payload.estimatedKm)
     const waitingHours = positiveNumber(payload.waitingHours)
     const cargoType = String(payload.cargoType || 'GENERAL').toUpperCase()
-    const tollCost = Math.round(positiveNumber(payload.tollCost ?? payload.manualTollCost ?? route?.tolls?.totalAmount))
+    const tollCost = Math.round(positiveNumber(payload.tollCost ?? payload.manualTollCost ?? tolls?.totalAmount))
     const fuelLiters = estimatedKm > 0 ? round2(estimatedKm / calculationSettings.fuelKmPerLiter) : 0
     const fuelCost = Math.round(fuelLiters * dieselPricePerLiter)
     const operationCost = Math.round(estimatedKm * calculationSettings.operationCostPerKm)
@@ -143,7 +185,7 @@ export class FreightPricingService {
     }
   }
 
-  async resolveRoute(payload) {
+  async resolveRoute(payload: PlainRecord): Promise<unknown> {
     const origin = payload.origin || payload.originAddress
     const destination = payload.destination || payload.destinationAddress
 
@@ -162,15 +204,15 @@ export class FreightPricingService {
   }
 }
 
-function normalizeSettings(value = {}) {
+function normalizeSettings(value: PlainRecord = {}): NormalizedSettings {
   const merged = {
     ...DEFAULT_FREIGHT_PRICING_SETTINGS,
     ...value,
     cargoSurcharges: {
       ...DEFAULT_CARGO_SURCHARGES,
-      ...(value.cargoSurcharges || {}),
+      ...((value.cargoSurcharges as PlainRecord | undefined) || {}),
     },
-  }
+  } as NormalizedSettings
 
   return {
     ...merged,
@@ -202,8 +244,8 @@ function buildLineItems({
   unloadingCost,
   waitingCost,
   waitingHours,
-}) {
-  const items = [
+}: BuildLineItemsArgs): LineItem[] {
+  const items: LineItem[] = [
     {
       id: 'base-rate',
       label: 'Tarifa base',
@@ -272,12 +314,12 @@ function buildLineItems({
   return items
 }
 
-function positiveNumber(value) {
+function positiveNumber(value: unknown): number {
   const parsed = Number(value || 0)
 
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
-function round2(value) {
+function round2(value: number): number {
   return Math.round(value * 100) / 100
 }

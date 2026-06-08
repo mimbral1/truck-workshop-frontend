@@ -9,13 +9,48 @@ import {
 } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
+import type { ListQuery, PaginatedResult, PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 import { stripImmutableFields } from '../../shared/utils/payload-sanitizers.js'
 
 const VALID_STATUSES = new Set(['DRAFT', 'SUBMITTED', 'REVIEWED', 'APPROVED', 'REJECTED', 'PAID'])
 const FINAL_STATUSES = new Set(['SUBMITTED', 'REVIEWED', 'APPROVED', 'PAID'])
 const WAITING_HOUR_RATE = 15000
 
+interface ExpenseItem {
+  amount: number
+  category: string
+  id: string
+  label: string
+}
+
+interface CalculatedTripSheet {
+  costPerKm: number
+  expenseItems: ExpenseItem[]
+  grossMargin: number
+  netMargin: number
+  performanceScore: number
+  revenuePerKm: number
+  totalExpenses: number
+}
+
+interface PerformanceScoreArgs {
+  kmPlanned: number
+  kmReal: number
+  netMargin: number
+  revenue: number
+  status: unknown
+  waitingHours: number
+}
+
 export class DriverTripSheetService {
+  private readonly assignments: ResourceRepositoryContract
+  private readonly drivers: ResourceRepositoryContract
+  private readonly fleetTrucks: ResourceRepositoryContract
+  private readonly freightQuotes: ResourceRepositoryContract
+  private readonly freightRequests: ResourceRepositoryContract
+  private readonly sheets: ResourceRepositoryContract
+  private readonly trucks: ResourceRepositoryContract
+
   constructor() {
     this.assignments = createRepository(freightAssignmentResource)
     this.drivers = createRepository(driverResource)
@@ -26,11 +61,11 @@ export class DriverTripSheetService {
     this.trucks = createRepository(truckResource)
   }
 
-  list(query) {
+  list(query: ListQuery): Promise<PaginatedResult> {
     return this.sheets.findAll(query)
   }
 
-  async get(id) {
+  async get(id: string): Promise<PlainRecord> {
     const sheet = await this.sheets.findById(id)
 
     if (!sheet) {
@@ -40,7 +75,7 @@ export class DriverTripSheetService {
     return sheet
   }
 
-  async create(payload, actorName = 'Sistema') {
+  async create(payload: PlainRecord, actorName = 'Sistema'): Promise<PlainRecord | null> {
     const sheetNumber = await this.buildSheetNumber(payload.sheetNumber)
     const normalized = await this.normalizePayload(
       {
@@ -57,7 +92,7 @@ export class DriverTripSheetService {
     })
   }
 
-  async update(id, payload, actorName = 'Sistema') {
+  async update(id: string, payload: PlainRecord, actorName = 'Sistema'): Promise<PlainRecord | null> {
     const current = await this.get(id)
     const normalized = await this.normalizePayload(
       {
@@ -74,7 +109,7 @@ export class DriverTripSheetService {
     })
   }
 
-  async remove(id, actorName = 'Sistema') {
+  async remove(id: string, actorName = 'Sistema'): Promise<PlainRecord> {
     await this.get(id)
     await this.sheets.update(id, {
       deletedBy: actorName,
@@ -84,7 +119,7 @@ export class DriverTripSheetService {
     return this.sheets.remove(id)
   }
 
-  async preview(payload, actorName = 'Sistema') {
+  async preview(payload: PlainRecord, actorName = 'Sistema'): Promise<PlainRecord> {
     return this.normalizePayload(
       {
         ...payload,
@@ -94,7 +129,7 @@ export class DriverTripSheetService {
     )
   }
 
-  async buildSheetNumber(sheetNumber) {
+  async buildSheetNumber(sheetNumber?: unknown): Promise<string> {
     const cleanSheetNumber = String(sheetNumber || '').trim().toUpperCase()
 
     if (cleanSheetNumber) {
@@ -108,7 +143,7 @@ export class DriverTripSheetService {
       sort: 'createdAt',
     })
     const maxForYear = result.data.reduce((max, sheet) => {
-      const match = String(sheet.sheetNumber || '').match(/^PLAN-(\d{4})-(\d+)$/)
+      const match = String((sheet as PlainRecord).sheetNumber || '').match(/^PLAN-(\d{4})-(\d+)$/)
 
       if (!match || Number(match[1]) !== year) {
         return max
@@ -120,7 +155,7 @@ export class DriverTripSheetService {
     return `PLAN-${year}-${String(maxForYear + 1).padStart(4, '0')}`
   }
 
-  async normalizePayload(payload, actorName) {
+  async normalizePayload(payload: PlainRecord, actorName: string): Promise<PlainRecord> {
     const assignment = await this.findById(this.assignments, payload.assignmentId)
     const request = await this.findById(this.freightRequests, payload.requestId || assignment?.requestId || payload.freightId)
     const quote = await this.findById(this.freightQuotes, payload.quoteId || assignment?.quoteId || request?.quoteId)
@@ -130,7 +165,7 @@ export class DriverTripSheetService {
     const truck = await this.findTruck(truckId)
     const waitingHours = nonNegative(payload.waitingHours)
     const waitingCost = nonNegative(hasValue(payload.waitingCost) ? payload.waitingCost : waitingHours * WAITING_HOUR_RATE)
-    const normalized = {
+    const normalized: PlainRecord = {
       ...payload,
       assignmentId: assignment?.id || cleanOptional(payload.assignmentId),
       createdBy: cleanOptional(payload.createdBy) || actorName,
@@ -175,19 +210,19 @@ export class DriverTripSheetService {
     }
   }
 
-  async findById(repository, id) {
+  async findById(repository: ResourceRepositoryContract, id: unknown): Promise<PlainRecord | null> {
     if (!id) {
       return null
     }
 
     try {
-      return await repository.findById(id)
+      return await repository.findById(String(id))
     } catch {
       return null
     }
   }
 
-  async findTruck(truckId) {
+  async findTruck(truckId: unknown): Promise<PlainRecord | null> {
     if (!truckId) {
       return null
     }
@@ -196,7 +231,7 @@ export class DriverTripSheetService {
   }
 }
 
-function calculateTripSheet(payload) {
+function calculateTripSheet(payload: PlainRecord): CalculatedTripSheet {
   const expenseItems = buildExpenseItems(payload)
   const totalExpenses = expenseItems.reduce((total, item) => total + item.amount, 0)
   const revenue = nonNegative(payload.revenue)
@@ -225,8 +260,8 @@ function calculateTripSheet(payload) {
   }
 }
 
-function buildExpenseItems(payload) {
-  const entries = [
+function buildExpenseItems(payload: PlainRecord): ExpenseItem[] {
+  const entries: Array<[string, string, unknown]> = [
     ['FUEL', 'Combustible', payload.fuelCost],
     ['TOLL', 'Peajes', payload.tollCost],
     ['MEAL', 'Comida', payload.mealCost],
@@ -247,7 +282,7 @@ function buildExpenseItems(payload) {
     .filter((item) => item.amount > 0)
 }
 
-function calculatePerformanceScore({ kmPlanned, kmReal, netMargin, revenue, status, waitingHours }) {
+function calculatePerformanceScore({ kmPlanned, kmReal, netMargin, revenue, status, waitingHours }: PerformanceScoreArgs): number {
   const marginPercentage = revenue > 0 ? (netMargin / revenue) * 100 : 0
   const kmDeviation = kmPlanned > 0 && kmReal > 0 ? Math.max(((kmReal - kmPlanned) / kmPlanned) * 100, 0) : 0
   let score = 100
@@ -277,7 +312,7 @@ function calculatePerformanceScore({ kmPlanned, kmReal, netMargin, revenue, stat
   return Math.min(Math.max(Math.round(score), 0), 100)
 }
 
-function validateNormalizedSheet(sheet) {
+function validateNormalizedSheet(sheet: PlainRecord): void {
   if (!sheet.driverId) {
     throw new AppError('La planilla requiere chofer', 400)
   }
@@ -290,20 +325,20 @@ function validateNormalizedSheet(sheet) {
     throw new AppError('La planilla requiere fecha de salida', 400)
   }
 
-  if (sheet.deliveredAt && new Date(sheet.deliveredAt).getTime() < new Date(sheet.tripDate).getTime()) {
+  if (sheet.deliveredAt && new Date(sheet.deliveredAt as string).getTime() < new Date(sheet.tripDate as string).getTime()) {
     throw new AppError('La entrega real no puede ser anterior a la salida', 400)
   }
 
-  if (FINAL_STATUSES.has(sheet.status) && sheet.kmReal <= 0) {
+  if (FINAL_STATUSES.has(String(sheet.status)) && (sheet.kmReal as number) <= 0) {
     throw new AppError('Una planilla enviada o aprobada requiere kilometros reales', 400)
   }
 
-  if (FINAL_STATUSES.has(sheet.status) && sheet.revenue <= 0) {
+  if (FINAL_STATUSES.has(String(sheet.status)) && (sheet.revenue as number) <= 0) {
     throw new AppError('Una planilla enviada o aprobada requiere ingreso del flete', 400)
   }
 }
 
-function normalizeStatus(status) {
+function normalizeStatus(status: unknown): string {
   const normalized = String(status || 'DRAFT').trim().toUpperCase()
 
   if (!VALID_STATUSES.has(normalized)) {
@@ -313,12 +348,12 @@ function normalizeStatus(status) {
   return normalized
 }
 
-function normalizeDate(value) {
+function normalizeDate(value: unknown): string | undefined {
   if (!value) {
     return undefined
   }
 
-  const date = new Date(value)
+  const date = new Date(value as string)
 
   if (Number.isNaN(date.getTime())) {
     throw new AppError('Fecha de planilla invalida', 400)
@@ -327,7 +362,7 @@ function normalizeDate(value) {
   return date.toISOString()
 }
 
-function cleanRequired(value, message) {
+function cleanRequired(value: unknown, message: string): string {
   const cleaned = cleanOptional(value)
 
   if (!cleaned) {
@@ -337,26 +372,26 @@ function cleanRequired(value, message) {
   return cleaned
 }
 
-function cleanOptional(value) {
+function cleanOptional(value: unknown): string | undefined {
   const cleaned = String(value || '').trim()
 
   return cleaned || undefined
 }
 
-function nonNegative(value) {
+function nonNegative(value: unknown): number {
   const parsed = Number(value || 0)
 
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
-function hasValue(value) {
+function hasValue(value: unknown): boolean {
   return value !== undefined && value !== null && value !== ''
 }
 
-function round(value) {
+function round(value: number): number {
   return Math.round(value * 100) / 100
 }
 
-function slug(value) {
+function slug(value: unknown): string {
   return String(value || 'sheet').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }

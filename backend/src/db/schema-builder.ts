@@ -1,13 +1,14 @@
 import { allCrudResources } from '../config/resources.js'
 import { inferColumnType } from './column-type-inference.js'
 import { toSnakeCase } from '../shared/utils/case-converters.js'
+import type { ResourceDefinition } from '../shared/types/domain.js'
 
-function columnName(field, resource) {
+function columnName(field: string, resource: ResourceDefinition): string {
   return resource.fieldMap?.[field] || toSnakeCase(field)
 }
 
-export function buildSchemaStatements() {
-  const statements = []
+export function buildSchemaStatements(): string[] {
+  const statements: string[] = []
 
   for (const resource of allCrudResources) {
     statements.push(buildCreateTable(resource))
@@ -20,7 +21,7 @@ export function buildSchemaStatements() {
   return statements
 }
 
-function buildCreateTable(resource) {
+function buildCreateTable(resource: ResourceDefinition): string {
   return `
 IF OBJECT_ID(N'[dbo].[${resource.table}]', N'U') IS NULL
 BEGIN
@@ -31,7 +32,7 @@ BEGIN
 END;`
 }
 
-function buildMissingColumnStatements(resource) {
+function buildMissingColumnStatements(resource: ResourceDefinition): string[] {
   return resource.fields
     .filter((field) => field !== 'id')
     .map((field) => {
@@ -45,7 +46,7 @@ END;`
     })
 }
 
-function buildDataBackfillStatements(resource) {
+function buildDataBackfillStatements(resource: ResourceDefinition): string[] {
   if (resource.table === 'user_role_assignments') {
     return [
       `
@@ -74,8 +75,8 @@ END;`,
   ]
 }
 
-function buildColumnTypeCorrectionStatements(resource) {
-  const statements = []
+function buildColumnTypeCorrectionStatements(resource: ResourceDefinition): string[] {
+  const statements: string[] = []
 
   if (resource.table === 'truck_costs') {
     statements.push(
@@ -129,7 +130,7 @@ END;`,
   return statements
 }
 
-function buildIndexStatements(resource) {
+function buildIndexStatements(resource: ResourceDefinition): string[] {
   return [...new Set([...(resource.filterFields || []), ...(resource.sortFields || [])])]
     .filter((field) => resource.fields.includes(field))
     .slice(0, 8)

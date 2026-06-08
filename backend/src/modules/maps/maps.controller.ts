@@ -24,7 +24,7 @@ export const mapsController = {
   }),
 
   staticRoute: asyncHandler(async (request, response) => {
-    const map = await service.staticRoute(request.query)
+    const map = await service.staticRoute(request.query as Record<string, unknown>)
 
     response.type(map.contentType).send(map.buffer)
   }),

@@ -6,7 +6,7 @@ import { assignmentResource, workshopCaseResource } from '../../config/resources
 const casesRepository = createRepository(workshopCaseResource)
 const assignmentsRepository = createRepository(assignmentResource)
 
-export const getDashboardSummary = asyncHandler(async (request, response) => {
+export const getDashboardSummary = asyncHandler(async (_request, response) => {
   const [totalCases, criticalCases, breachedCases, atRiskCases, openAssignments] = await Promise.all([
     casesRepository.countBy(),
     casesRepository.countBy({ priority: 'critical' }),

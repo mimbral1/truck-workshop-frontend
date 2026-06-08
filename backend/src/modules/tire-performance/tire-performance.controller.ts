@@ -18,25 +18,25 @@ export const intakeTireLifecycles = asyncHandler(async (request, response) => {
 })
 
 export const installTireLifecycle = asyncHandler(async (request, response) => {
-  const tire = await service.install(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+  const tire = await service.install(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: tire })
 })
 
 export const removeTireLifecycle = asyncHandler(async (request, response) => {
-  const tire = await service.remove(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+  const tire = await service.remove(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: tire })
 })
 
 export const updateTireLifecycle = asyncHandler(async (request, response) => {
-  const tire = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+  const tire = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: tire })
 })
 
 export const deleteTireLifecycle = asyncHandler(async (request, response) => {
-  const tire = await service.removeRecord(request.params.id, getActorName(request, ['updatedBy', 'createdBy']))
+  const tire = await service.removeRecord(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: tire })
 })

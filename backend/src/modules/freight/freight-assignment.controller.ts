@@ -12,13 +12,13 @@ export const createFreightAssignment = asyncHandler(async (request, response) =>
 })
 
 export const updateFreightAssignment = asyncHandler(async (request, response) => {
-  const assignment = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy', 'assignedBy']))
+  const assignment = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy', 'assignedBy']))
 
   sendResponse(response, { data: assignment })
 })
 
 export const deleteFreightAssignment = asyncHandler(async (request, response) => {
-  const assignment = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy', 'assignedBy']))
+  const assignment = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy', 'assignedBy']))
 
   sendResponse(response, { data: assignment })
 })

@@ -1,7 +1,8 @@
 import { CustomerService } from './customer.service.js'
 import { asyncHandler } from '../../shared/http/async-handler.js'
 import { getActorName } from '../../shared/http/request-actor.js'
-import { sendResponse } from '../../shared/http/send-response.js'
+import { sendResponse, type ResponsePayload } from '../../shared/http/send-response.js'
+import type { ListQuery } from '../../shared/types/domain.js'
 
 const service = new CustomerService()
 
@@ -13,31 +14,31 @@ export const customerController = {
   }),
 
   get: asyncHandler(async (request, response) => {
-    const customer = await service.get(request.params.id)
+    const customer = await service.get(String(request.params.id))
 
     sendResponse(response, { data: customer })
   }),
 
   getCreditSummary: asyncHandler(async (request, response) => {
-    const summary = await service.getCreditSummary(request.params.id)
+    const summary = await service.getCreditSummary(String(request.params.id))
 
     sendResponse(response, { data: summary })
   }),
 
   list: asyncHandler(async (request, response) => {
-    const result = await service.list(request.query)
+    const result = await service.list(request.query as unknown as ListQuery)
 
-    sendResponse(response, result)
+    sendResponse(response, result as unknown as ResponsePayload)
   }),
 
   remove: asyncHandler(async (request, response) => {
-    const customer = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy']))
+    const customer = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy']))
 
     sendResponse(response, { data: customer })
   }),
 
   update: asyncHandler(async (request, response) => {
-    const customer = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+    const customer = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
     sendResponse(response, { data: customer })
   }),

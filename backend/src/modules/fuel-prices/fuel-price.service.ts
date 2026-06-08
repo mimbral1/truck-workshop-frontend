@@ -2,21 +2,86 @@ import { env } from '../../config/env.js'
 import { fuelPriceSnapshotResource } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
+import type { ListQuery, PaginatedResult, PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 
 const PROVIDER = 'CNE'
 const SOURCE = 'CNE / Energia Abierta'
 
+interface GetCurrentPriceOptions {
+  fuelType?: string
+  regionCode?: string
+}
+
+interface FindLatestFilters {
+  normalizedFuelType: string
+  regionCode: string
+}
+
+interface SyncOptions {
+  actorName?: string
+  force?: boolean
+}
+
+interface FallbackSnapshotOptions {
+  normalizedFuelType: string
+  regionCode: string
+  syncError?: Error | null
+}
+
+interface Snapshot {
+  errorMessage: string
+  fuelType: unknown
+  id: unknown
+  isOfficial: boolean
+  isStale: boolean
+  lastFetchedAt: unknown
+  minutesUntilNextSync: number
+  month?: unknown
+  nextSyncAt?: string | null
+  normalizedFuelType: unknown
+  pricePerLiter: number
+  provider: unknown
+  regionCode: unknown
+  regionName: unknown
+  source: unknown
+  sourceDate: unknown
+  status: unknown
+  syncIntervalMinutes: number
+  year?: unknown
+}
+
+interface SyncResult {
+  provider: string
+  records: Snapshot[]
+  syncedAt: string
+  total: number
+  triggeredBy: string
+  skipped?: undefined
+}
+
+interface SyncSkippedResult {
+  skipped: true
+  reason: string
+  latest?: Snapshot
+  total?: undefined
+}
+
+type SyncIfDueResult = SyncResult | SyncSkippedResult
+
 export class FuelPriceService {
+  private readonly repository: ResourceRepositoryContract
+  private lastSyncAttemptAt: number
+
   constructor() {
     this.repository = createRepository(fuelPriceSnapshotResource)
     this.lastSyncAttemptAt = 0
   }
 
-  async getCurrentPrice(options = {}) {
+  async getCurrentPrice(options: GetCurrentPriceOptions = {}): Promise<Snapshot> {
     const normalizedFuelType = normalizeFuelType(options.fuelType || env.cne.defaultFuelType)
     const regionCode = String(options.regionCode || env.cne.defaultRegionCode).trim()
     const cached = await this.findLatest({ normalizedFuelType, regionCode })
-    let syncError
+    let syncError: Error | undefined
 
     if (!env.cne.apiToken && !cached) {
       return this.buildFallbackSnapshot({
@@ -30,7 +95,7 @@ export class FuelPriceService {
       try {
         await this.syncIfDue()
       } catch (error) {
-        syncError = error
+        syncError = error as Error
       }
     }
 
@@ -43,7 +108,7 @@ export class FuelPriceService {
     return this.buildFallbackSnapshot({ normalizedFuelType, regionCode, syncError })
   }
 
-  async listHistory(query = {}) {
+  async listHistory(query: ListQuery = {}): Promise<PaginatedResult> {
     return this.repository.findAll({
       limit: query.limit || 25,
       order: query.order || 'desc',
@@ -51,11 +116,11 @@ export class FuelPriceService {
       regionCode: query.regionCode || env.cne.defaultRegionCode,
       sort: query.sort || 'lastFetchedAt',
       status: query.status,
-      normalizedFuelType: query.fuelType ? normalizeFuelType(query.fuelType) : undefined,
+      normalizedFuelType: query.fuelType ? normalizeFuelType(String(query.fuelType)) : undefined,
     })
   }
 
-  async syncIfDue(options = {}) {
+  async syncIfDue(options: SyncOptions = {}): Promise<SyncIfDueResult> {
     const intervalMs = env.cne.syncIntervalMinutes * 60_000
     const now = Date.now()
 
@@ -65,14 +130,14 @@ export class FuelPriceService {
 
     const latest = await this.findLatestAny()
 
-    if (!options.force && latest?.lastFetchedAt && now - new Date(latest.lastFetchedAt).getTime() < intervalMs) {
+    if (!options.force && latest?.lastFetchedAt && now - new Date(latest.lastFetchedAt as string).getTime() < intervalMs) {
       return { skipped: true, latest: toSnapshot(latest), reason: 'cache-fresh' }
     }
 
     return this.sync(options)
   }
 
-  async sync(options = {}) {
+  async sync(options: SyncOptions = {}): Promise<SyncResult> {
     this.lastSyncAttemptAt = Date.now()
 
     if (!env.cne.apiToken) {
@@ -87,7 +152,7 @@ export class FuelPriceService {
     const rows = extractRows(payload)
     const records = rows
       .map((row) => normalizeCneRecord(row, now))
-      .filter(Boolean)
+      .filter((record): record is PlainRecord => Boolean(record))
 
     if (records.length === 0) {
       throw new AppError('CNE no retorno precios de combustibles utilizables.', 502, {
@@ -100,14 +165,14 @@ export class FuelPriceService {
 
     return {
       provider: SOURCE,
-      records: saved.map((record) => toSnapshot(record)),
+      records: saved.map((record) => toSnapshot(record as PlainRecord)),
       syncedAt: now,
       total: saved.length,
       triggeredBy: options.actorName || 'Sistema',
     }
   }
 
-  async fetchCneFuelPrices() {
+  async fetchCneFuelPrices(): Promise<unknown> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), env.cne.requestTimeoutMs)
     const url = new URL(env.cne.fuelPricesPath, env.cne.baseUrl)
@@ -130,7 +195,7 @@ export class FuelPriceService {
 
       return response.json()
     } catch (error) {
-      if (error.name === 'AbortError') {
+      if ((error as Error).name === 'AbortError') {
         throw new AppError('CNE no respondio dentro del tiempo configurado.', 504, {
           provider: SOURCE,
           timeoutMs: env.cne.requestTimeoutMs,
@@ -143,7 +208,7 @@ export class FuelPriceService {
     }
   }
 
-  async findLatest(filters) {
+  async findLatest(filters: FindLatestFilters): Promise<PlainRecord | null> {
     const result = await this.repository.findAll({
       limit: 1,
       normalizedFuelType: filters.normalizedFuelType,
@@ -156,7 +221,7 @@ export class FuelPriceService {
     return result.data[0] || null
   }
 
-  async findLatestAny() {
+  async findLatestAny(): Promise<PlainRecord | null> {
     const result = await this.repository.findAll({
       limit: 1,
       order: 'desc',
@@ -167,15 +232,15 @@ export class FuelPriceService {
     return result.data[0] || null
   }
 
-  isStale(record) {
+  isStale(record: PlainRecord | null): boolean {
     if (!record?.lastFetchedAt) {
       return true
     }
 
-    return Date.now() - new Date(record.lastFetchedAt).getTime() >= env.cne.syncIntervalMinutes * 60_000
+    return Date.now() - new Date(record.lastFetchedAt as string).getTime() >= env.cne.syncIntervalMinutes * 60_000
   }
 
-  buildFallbackSnapshot({ normalizedFuelType, regionCode, syncError }) {
+  buildFallbackSnapshot({ normalizedFuelType, regionCode, syncError }: FallbackSnapshotOptions): Snapshot {
     return {
       errorMessage: syncError ? syncError.message : 'Sin precio cacheado de CNE.',
       fuelType: normalizedFuelType,
@@ -199,23 +264,23 @@ export class FuelPriceService {
 
 export const fuelPriceService = new FuelPriceService()
 
-function extractRows(payload) {
+function extractRows(payload: unknown): PlainRecord[] {
   if (Array.isArray(payload)) {
-    return payload
+    return payload as PlainRecord[]
   }
 
-  if (Array.isArray(payload?.data)) {
-    return payload.data
+  if (Array.isArray((payload as PlainRecord)?.data)) {
+    return (payload as PlainRecord).data as PlainRecord[]
   }
 
-  if (Array.isArray(payload?.result)) {
-    return payload.result
+  if (Array.isArray((payload as PlainRecord)?.result)) {
+    return (payload as PlainRecord).result as PlainRecord[]
   }
 
   return []
 }
 
-function normalizeCneRecord(row, fetchedAt) {
+function normalizeCneRecord(row: PlainRecord, fetchedAt: string): PlainRecord | null {
   const fuelType = String(row.tipo_combustible ?? row.fuelType ?? row.combustible ?? '').trim()
   const normalizedFuelType = normalizeFuelType(fuelType)
   const regionCode = String(row.region_cod ?? row.regionCode ?? row.region_codigo ?? '').trim()
@@ -247,7 +312,7 @@ function normalizeCneRecord(row, fetchedAt) {
   }
 }
 
-function normalizeFuelType(value) {
+function normalizeFuelType(value: unknown): string {
   const text = String(value || '')
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
@@ -276,7 +341,7 @@ function normalizeFuelType(value) {
   return text.replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
-function parsePrice(value) {
+function parsePrice(value: unknown): number {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? Math.round(value) : 0
   }
@@ -304,9 +369,9 @@ function parsePrice(value) {
   return Number.isFinite(parsed) ? Math.round(parsed) : 0
 }
 
-function parseSourceDate(value, year, month) {
+function parseSourceDate(value: unknown, year: number | null, month: number | null): string {
   if (value) {
-    const parsed = new Date(value)
+    const parsed = new Date(value as string | number | Date)
 
     if (!Number.isNaN(parsed.getTime())) {
       return parsed.toISOString()
@@ -320,18 +385,18 @@ function parseSourceDate(value, year, month) {
   return new Date().toISOString()
 }
 
-function parseInteger(value) {
+function parseInteger(value: unknown): number | null {
   const parsed = Number(value)
 
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null
 }
 
-function slug(value) {
+function slug(value: unknown): string {
   return String(value || 'all').replace(/[^a-zA-Z0-9_-]/g, '-')
 }
 
-function toSnapshot(record, syncError) {
-  const lastFetchedAt = record.lastFetchedAt || null
+function toSnapshot(record: PlainRecord, syncError?: Error): Snapshot {
+  const lastFetchedAt = (record.lastFetchedAt as string | null) || null
   const nextSyncAt = lastFetchedAt
     ? new Date(new Date(lastFetchedAt).getTime() + env.cne.syncIntervalMinutes * 60_000).toISOString()
     : null
@@ -340,7 +405,7 @@ function toSnapshot(record, syncError) {
     : 0
 
   return {
-    errorMessage: syncError?.message || record.errorMessage || '',
+    errorMessage: syncError?.message || (record.errorMessage as string) || '',
     fuelType: record.fuelType,
     id: record.id,
     isOfficial: record.provider === PROVIDER && record.status === 'OK',

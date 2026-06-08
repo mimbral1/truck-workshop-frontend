@@ -6,17 +6,28 @@ import {
 } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
+import type { PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 import { stripImmutableFields } from '../../shared/utils/payload-sanitizers.js'
 
 const VALID_STATUSES = new Set(['SCHEDULED', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'])
-const REQUEST_STATUS_BY_ASSIGNMENT_STATUS = {
+const REQUEST_STATUS_BY_ASSIGNMENT_STATUS: Record<string, string> = {
   CANCELLED: 'APPROVED',
   DELIVERED: 'DELIVERED',
   IN_TRANSIT: 'IN_TRANSIT',
   SCHEDULED: 'ASSIGNED',
 }
 
+interface NormalizeOptions {
+  freightRequest?: PlainRecord | null
+  partial?: boolean
+}
+
 export class FreightAssignmentService {
+  private readonly assignments: ResourceRepositoryContract
+  private readonly drivers: ResourceRepositoryContract
+  private readonly freightRequests: ResourceRepositoryContract
+  private readonly trucks: ResourceRepositoryContract
+
   constructor() {
     this.assignments = createRepository(freightAssignmentResource)
     this.drivers = createRepository(driverResource)
@@ -24,7 +35,7 @@ export class FreightAssignmentService {
     this.trucks = createRepository(truckResource)
   }
 
-  async create(payload, actorName) {
+  async create(payload: PlainRecord, actorName: string): Promise<PlainRecord | null> {
     const [freightRequest, truck, driver] = await Promise.all([
       this.requireFreightRequest(payload.requestId),
       this.requireTruck(payload.truckId),
@@ -32,7 +43,7 @@ export class FreightAssignmentService {
     ])
     const normalized = normalizeAssignmentPayload(payload, actorName, { freightRequest })
 
-    if (!['APPROVED', 'ASSIGNED'].includes(freightRequest.status)) {
+    if (!['APPROVED', 'ASSIGNED'].includes(String(freightRequest.status))) {
       throw new AppError('La solicitud debe estar aprobada antes de asignar camion y chofer', 400)
     }
 
@@ -48,18 +59,18 @@ export class FreightAssignmentService {
       ...normalized,
       createdBy: payload.createdBy || actorName,
       updatedBy: payload.updatedBy || actorName,
-    })
+    }) as PlainRecord
 
-    await this.freightRequests.update(freightRequest.id, {
+    await this.freightRequests.update(String(freightRequest.id), {
       assignedDriverId: assignment.driverId,
       assignedTruckId: assignment.truckId,
-      status: REQUEST_STATUS_BY_ASSIGNMENT_STATUS[assignment.status],
+      status: REQUEST_STATUS_BY_ASSIGNMENT_STATUS[String(assignment.status)],
     })
 
     return assignment
   }
 
-  async update(id, payload, actorName) {
+  async update(id: string, payload: PlainRecord, actorName: string): Promise<PlainRecord | null> {
     const current = await this.requireAssignment(id)
     const normalized = normalizeAssignmentPayload(stripImmutableFields(payload, ['deletedBy']), actorName, {
       freightRequest: await this.requireFreightRequest(payload.requestId || current.requestId),
@@ -68,25 +79,25 @@ export class FreightAssignmentService {
     const assignment = await this.assignments.update(id, {
       ...normalized,
       updatedBy: actorName,
-    })
+    }) as PlainRecord
 
     if (normalized.status || normalized.truckId || normalized.driverId) {
-      await this.freightRequests.update(assignment.requestId, {
+      await this.freightRequests.update(String(assignment.requestId), {
         assignedDriverId: assignment.driverId,
         assignedTruckId: assignment.truckId,
-        status: REQUEST_STATUS_BY_ASSIGNMENT_STATUS[assignment.status],
+        status: REQUEST_STATUS_BY_ASSIGNMENT_STATUS[String(assignment.status)],
       })
     }
 
     return assignment
   }
 
-  async remove(id, actorName) {
+  async remove(id: string, actorName: string): Promise<PlainRecord> {
     const current = await this.requireAssignment(id)
 
     await this.assignments.update(id, { deletedBy: actorName, updatedBy: actorName })
     const assignment = await this.assignments.remove(id)
-    await this.freightRequests.update(current.requestId, {
+    await this.freightRequests.update(String(current.requestId), {
       assignedDriverId: null,
       assignedTruckId: null,
       status: 'APPROVED',
@@ -95,7 +106,7 @@ export class FreightAssignmentService {
     return assignment
   }
 
-  async requireAssignment(id) {
+  async requireAssignment(id: string): Promise<PlainRecord> {
     const assignment = await this.assignments.findById(id)
 
     if (!assignment) {
@@ -105,8 +116,8 @@ export class FreightAssignmentService {
     return assignment
   }
 
-  async requireFreightRequest(id) {
-    const freightRequest = await this.freightRequests.findById(id)
+  async requireFreightRequest(id: unknown): Promise<PlainRecord> {
+    const freightRequest = await this.freightRequests.findById(String(id))
 
     if (!freightRequest) {
       throw new AppError('Solicitud de flete no encontrada para asignacion', 404)
@@ -115,8 +126,8 @@ export class FreightAssignmentService {
     return freightRequest
   }
 
-  async requireTruck(id) {
-    const truck = await this.trucks.findById(id)
+  async requireTruck(id: unknown): Promise<PlainRecord> {
+    const truck = await this.trucks.findById(String(id))
 
     if (!truck) {
       throw new AppError('Camion no encontrado para asignacion de flete', 404)
@@ -125,8 +136,8 @@ export class FreightAssignmentService {
     return truck
   }
 
-  async requireDriver(id) {
-    const driver = await this.drivers.findById(id)
+  async requireDriver(id: unknown): Promise<PlainRecord> {
+    const driver = await this.drivers.findById(String(id))
 
     if (!driver) {
       throw new AppError('Chofer no encontrado para asignacion de flete', 404)
@@ -136,8 +147,8 @@ export class FreightAssignmentService {
   }
 }
 
-function normalizeAssignmentPayload(payload, actorName, options = {}) {
-  const normalized = { ...payload }
+function normalizeAssignmentPayload(payload: PlainRecord, actorName: string, options: NormalizeOptions = {}): PlainRecord {
+  const normalized: PlainRecord = { ...payload }
 
   if (!options.partial || payload.requestId !== undefined) {
     normalized.requestId = String(payload.requestId || '').trim()
@@ -182,13 +193,13 @@ function normalizeAssignmentPayload(payload, actorName, options = {}) {
   return normalized
 }
 
-function normalizeStatus(status) {
+function normalizeStatus(status: unknown): string {
   const normalizedStatus = String(status || 'SCHEDULED').trim().toUpperCase()
 
   return VALID_STATUSES.has(normalizedStatus) ? normalizedStatus : 'SCHEDULED'
 }
 
-function normalizeDate(value) {
+function normalizeDate(value: unknown): string {
   const rawValue = String(value || '').trim()
   const date = rawValue.length === 16 ? new Date(rawValue) : new Date(rawValue)
 

@@ -1,6 +1,7 @@
 import { resourceByName } from '../../config/resource-lookup.js'
 import { workshopCaseResource } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
+import type { ListQuery, PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 
 const MAX_FETCH_PAGES = 20
 const DEFAULT_PERIOD_DAYS = 90
@@ -26,7 +27,31 @@ const repositories = {
   workshopCases: createRepository(workshopCaseResource),
 }
 
-export async function buildDriverPerformanceReport(query = {}) {
+interface Period {
+  days: number
+  from: Date
+  to: Date
+}
+
+interface BuildDriverRowContext {
+  arrivals: PlainRecord[]
+  assignmentById: Map<unknown, PlainRecord>
+  assignmentByRequestId: Map<unknown, PlainRecord>
+  assignments: PlainRecord[]
+  cases: PlainRecord[]
+  departures: PlainRecord[]
+  driverDocuments: PlainRecord[]
+  driverFines: PlainRecord[]
+  fuelRecords: PlainRecord[]
+  healthScores: PlainRecord[]
+  incidents: PlainRecord[]
+  period: Period
+  telematics: PlainRecord[]
+  tripSheets: PlainRecord[]
+  trucks: PlainRecord[]
+}
+
+export async function buildDriverPerformanceReport(query: PlainRecord = {}) {
   const period = resolvePeriod(query)
   const [drivers, driverDocuments, driverFines, tripSheets, assignments, fuelRecords, incidents, trucks, healthScores, telematics, departures, arrivals, cases] =
     await Promise.all([
@@ -85,7 +110,7 @@ export async function buildDriverPerformanceReport(query = {}) {
   }
 }
 
-function buildDriverRow(driver, context) {
+function buildDriverRow(driver: PlainRecord, context: BuildDriverRowContext) {
   const {
     arrivals,
     assignmentById,
@@ -175,8 +200,8 @@ function buildDriverRow(driver, context) {
     performanceBand: bandForScore(scores.operationalScore),
     recent: {
       checklists: buildRecentChecklists(driverDepartures, driverArrivals),
-      documents: documents.filter((item) => HARD_DOCUMENT_STATUSES.has(item.status) || SOFT_DOCUMENT_STATUSES.has(item.status)).slice(0, 5),
-      fines: fines.filter((item) => ACTIVE_FINE_STATUSES.has(item.status)).slice(0, 5),
+      documents: documents.filter((item) => HARD_DOCUMENT_STATUSES.has(item.status as string) || SOFT_DOCUMENT_STATUSES.has(item.status as string)).slice(0, 5),
+      fines: fines.filter((item) => ACTIVE_FINE_STATUSES.has(item.status as string)).slice(0, 5),
       fuelRecords: driverFuelRecords.slice(0, 5).map(mapFuelRecord),
       incidents: driverIncidents.slice(0, 5).map(mapIncident),
       trips: driverTrips.slice(0, 6).map(mapTripSheet),
@@ -190,7 +215,12 @@ function buildDriverRow(driver, context) {
   }
 }
 
-function buildTripMetrics(trips, assignments, assignmentById, assignmentByRequestId) {
+function buildTripMetrics(
+  trips: PlainRecord[],
+  assignments: PlainRecord[],
+  assignmentById: Map<unknown, PlainRecord>,
+  assignmentByRequestId: Map<unknown, PlainRecord>,
+) {
   const deliveredTrips = trips.filter((item) => item.deliveredAt)
   const onTimeSamples = deliveredTrips
     .map((sheet) => {
@@ -202,7 +232,7 @@ function buildTripMetrics(trips, assignments, assignmentById, assignmentByReques
           }
         : null
     })
-    .filter(Boolean)
+    .filter((item): item is { deliveredAt: unknown; dueAt: {} } => Boolean(item))
   const onTime = onTimeSamples.filter((item) => dateValue(item.deliveredAt) <= dateValue(item.dueAt) + 30 * 60 * 1000).length
 
   return {
@@ -222,7 +252,7 @@ function buildTripMetrics(trips, assignments, assignmentById, assignmentByReques
   }
 }
 
-function buildFinanceMetrics(trips) {
+function buildFinanceMetrics(trips: PlainRecord[]) {
   const revenue = sum(trips, 'revenue')
   const totalExpenses = sum(trips, 'totalExpenses')
   const netMargin = sum(trips, 'netMargin')
@@ -239,7 +269,7 @@ function buildFinanceMetrics(trips) {
   }
 }
 
-function buildRouteMetrics(trips) {
+function buildRouteMetrics(trips: PlainRecord[]) {
   const kmPlanned = sum(trips, 'kmPlanned')
   const kmReal = sum(trips, 'kmReal')
   const kmDeviationPercent = kmPlanned > 0 ? round(((kmReal - kmPlanned) / kmPlanned) * 100) : 0
@@ -260,7 +290,7 @@ function buildRouteMetrics(trips) {
   }
 }
 
-function buildFuelMetrics(records) {
+function buildFuelMetrics(records: PlainRecord[]) {
   const liters = sum(records, 'liters')
   const fuelSpend = sum(records, 'totalAmount')
   const kmPerLiterRecords = records.filter((item) => Number(item.kmPerLiter || 0) > 0)
@@ -278,16 +308,16 @@ function buildFuelMetrics(records) {
   }
 }
 
-function buildComplianceMetrics(driver, documents, fines) {
-  const activeFines = fines.filter((item) => ACTIVE_FINE_STATUSES.has(item.status))
+function buildComplianceMetrics(driver: PlainRecord, documents: PlainRecord[], fines: PlainRecord[]) {
+  const activeFines = fines.filter((item) => ACTIVE_FINE_STATUSES.has(item.status as string))
   const overdueFines = activeFines.filter((item) => item.dueAt && dateValue(item.dueAt) < Date.now())
-  const hardDocuments = documents.filter((item) => HARD_DOCUMENT_STATUSES.has(item.status))
-  const expiringDocuments = documents.filter((item) => SOFT_DOCUMENT_STATUSES.has(item.status))
+  const hardDocuments = documents.filter((item) => HARD_DOCUMENT_STATUSES.has(item.status as string))
+  const expiringDocuments = documents.filter((item) => SOFT_DOCUMENT_STATUSES.has(item.status as string))
 
   return {
     activeFineAmount: sum(activeFines, 'amount'),
     activeFines: activeFines.length,
-    criticalFines: activeFines.filter((item) => SEVERE_FINE_LEVELS.has(item.severity)).length,
+    criticalFines: activeFines.filter((item) => SEVERE_FINE_LEVELS.has(item.severity as string)).length,
     documents: documents.length,
     expiredDocuments: documents.filter((item) => item.status === 'EXPIRED').length,
     expiringDocuments: expiringDocuments.length,
@@ -299,7 +329,13 @@ function buildComplianceMetrics(driver, documents, fines) {
   }
 }
 
-function buildSafetyMetrics(incidents, departures, arrivals, telemetry, cases) {
+function buildSafetyMetrics(
+  incidents: PlainRecord[],
+  departures: PlainRecord[],
+  arrivals: PlainRecord[],
+  telemetry: PlainRecord | null,
+  cases: PlainRecord[],
+) {
   const telemetryAlerts = Array.isArray(telemetry?.alerts) ? telemetry.alerts : []
 
   return {
@@ -309,15 +345,15 @@ function buildSafetyMetrics(incidents, departures, arrivals, telemetry, cases) {
     criticalIncidents: incidents.filter((item) => item.severity === 'CRITICAL' || item.severity === 'HIGH').length,
     estimatedIncidentCost: sum(incidents, 'estimatedCost'),
     openCases: cases.filter((item) => item.status !== 'closed').length,
-    openIncidents: incidents.filter((item) => OPEN_INCIDENT_STATUSES.has(item.status)).length,
-    routeDeviationAlerts: telemetryAlerts.filter((item) => item === 'ROUTE_DEVIATION').length,
-    speedingAlerts: telemetryAlerts.filter((item) => item === 'SPEEDING').length,
+    openIncidents: incidents.filter((item) => OPEN_INCIDENT_STATUSES.has(item.status as string)).length,
+    routeDeviationAlerts: telemetryAlerts.filter((item: unknown) => item === 'ROUTE_DEVIATION').length,
+    speedingAlerts: telemetryAlerts.filter((item: unknown) => item === 'SPEEDING').length,
     telemetryAlerts: telemetryAlerts.length,
     totalIncidents: incidents.length,
   }
 }
 
-function buildChecklistMetrics(departures, arrivals) {
+function buildChecklistMetrics(departures: PlainRecord[], arrivals: PlainRecord[]) {
   const all = [...departures, ...arrivals]
   const completed = all.filter((item) => item.status === 'COMPLETED').length
 
@@ -331,16 +367,16 @@ function buildChecklistMetrics(departures, arrivals) {
   }
 }
 
-function buildTelemetryScore(telemetry) {
+function buildTelemetryScore(telemetry: PlainRecord | null) {
   if (!telemetry) {
     return {
-      alerts: [],
-      fuelLevel: null,
+      alerts: [] as unknown[],
+      fuelLevel: null as unknown,
       idleMinutes: 0,
-      lastSignalAt: null,
+      lastSignalAt: null as unknown,
       score: 70,
-      signalAgeHours: null,
-      speed: null,
+      signalAgeHours: null as number | null,
+      speed: null as unknown,
     }
   }
 
@@ -375,7 +411,28 @@ function buildTelemetryScore(telemetry) {
   }
 }
 
-function buildScores({ checklist, compliance, finance, fuel, route, safety, telemetryScore, tripMetrics }) {
+type ComplianceMetrics = ReturnType<typeof buildComplianceMetrics>
+type SafetyMetrics = ReturnType<typeof buildSafetyMetrics>
+type FuelMetrics = ReturnType<typeof buildFuelMetrics>
+type RouteMetrics = ReturnType<typeof buildRouteMetrics>
+type FinanceMetrics = ReturnType<typeof buildFinanceMetrics>
+type TripMetrics = ReturnType<typeof buildTripMetrics>
+type ChecklistMetrics = ReturnType<typeof buildChecklistMetrics>
+type TelemetryScore = ReturnType<typeof buildTelemetryScore>
+type Scores = ReturnType<typeof buildScores>
+
+interface BuildScoresInput {
+  checklist: ChecklistMetrics
+  compliance: ComplianceMetrics
+  finance: FinanceMetrics
+  fuel: FuelMetrics
+  route: RouteMetrics
+  safety: SafetyMetrics
+  telemetryScore: TelemetryScore
+  tripMetrics: TripMetrics
+}
+
+function buildScores({ checklist, compliance, finance, fuel, route, safety, telemetryScore, tripMetrics }: BuildScoresInput) {
   const tripScore = tripMetrics.sheets > 0
     ? clamp(Math.round((finance.marginPercentage >= 28 ? 92 : finance.marginPercentage >= 20 ? 82 : finance.marginPercentage >= 10 ? 68 : 50) - Math.max(route.kmDeviationPercent - 8, 0)), 0, 100)
     : 70
@@ -409,7 +466,7 @@ function buildScores({ checklist, compliance, finance, fuel, route, safety, tele
   }
 }
 
-function calculateComplianceScore(compliance) {
+function calculateComplianceScore(compliance: ComplianceMetrics): number {
   let score = compliance.status === 'active' ? 100 : 35
 
   score -= compliance.hardDocumentIssues * 25
@@ -421,7 +478,7 @@ function calculateComplianceScore(compliance) {
   return clamp(Math.round(score), 0, 100)
 }
 
-function calculateSafetyScore(safety) {
+function calculateSafetyScore(safety: SafetyMetrics): number {
   let score = 100
 
   score -= safety.criticalIncidents * 24
@@ -435,7 +492,7 @@ function calculateSafetyScore(safety) {
   return clamp(Math.round(score), 0, 100)
 }
 
-function calculateProfitabilityScore(finance) {
+function calculateProfitabilityScore(finance: FinanceMetrics): number {
   if (finance.revenue <= 0) {
     return 72
   }
@@ -459,7 +516,7 @@ function calculateProfitabilityScore(finance) {
   return 20
 }
 
-function calculateFuelScore(fuel) {
+function calculateFuelScore(fuel: FuelMetrics): number {
   if (fuel.records === 0) {
     return 72
   }
@@ -472,7 +529,7 @@ function calculateFuelScore(fuel) {
   return clamp(Math.round(score), 0, 100)
 }
 
-function calculatePunctualityScore(tripMetrics, route) {
+function calculatePunctualityScore(tripMetrics: TripMetrics, route: RouteMetrics): number {
   let score = tripMetrics.onTimeRate ?? 78
   const averageWaitingHours = tripMetrics.sheets > 0 ? route.waitingHours / tripMetrics.sheets : 0
 
@@ -491,7 +548,7 @@ function calculatePunctualityScore(tripMetrics, route) {
   return clamp(Math.round(score), 0, 100)
 }
 
-function calculateChecklistScore(checklist) {
+function calculateChecklistScore(checklist: ChecklistMetrics): number {
   if (checklist.total === 0) {
     return 70
   }
@@ -504,7 +561,15 @@ function calculateChecklistScore(checklist) {
   return clamp(Math.round(score), 0, 100)
 }
 
-function classifyRisk(driver, compliance, safety, fuel, route, finance, scores) {
+function classifyRisk(
+  driver: PlainRecord,
+  compliance: ComplianceMetrics,
+  safety: SafetyMetrics,
+  fuel: FuelMetrics,
+  route: RouteMetrics,
+  finance: FinanceMetrics,
+  scores: Scores,
+) {
   if (
     driver.status !== 'active' ||
     compliance.hardDocumentIssues > 0 ||
@@ -540,8 +605,16 @@ function classifyRisk(driver, compliance, safety, fuel, route, finance, scores) 
   }
 }
 
-function buildBlockers(driver, compliance, safety, fuel, route, finance, tripMetrics) {
-  const blockers = []
+function buildBlockers(
+  driver: PlainRecord,
+  compliance: ComplianceMetrics,
+  safety: SafetyMetrics,
+  fuel: FuelMetrics,
+  route: RouteMetrics,
+  finance: FinanceMetrics,
+  tripMetrics: TripMetrics,
+): string[] {
+  const blockers: string[] = []
 
   if (driver.status !== 'active') blockers.push('Chofer inactivo')
   if (compliance.hardDocumentIssues > 0) blockers.push(`${compliance.hardDocumentIssues} documento(s) bloqueantes`)
@@ -557,8 +630,15 @@ function buildBlockers(driver, compliance, safety, fuel, route, finance, tripMet
   return blockers.slice(0, 6)
 }
 
-function buildHighlights(trips, finance, route, fuel, tripMetrics, scores) {
-  const highlights = []
+function buildHighlights(
+  trips: PlainRecord[],
+  finance: FinanceMetrics,
+  route: RouteMetrics,
+  fuel: FuelMetrics,
+  tripMetrics: TripMetrics,
+  scores: Scores,
+): string[] {
+  const highlights: string[] = []
 
   if (trips.length > 0) highlights.push(`${tripMetrics.sheets} viaje(s) rendidos`)
   if (finance.revenue > 0) highlights.push(`Margen ${finance.marginPercentage}%`)
@@ -569,7 +649,16 @@ function buildHighlights(trips, finance, route, fuel, tripMetrics, scores) {
   return highlights.slice(0, 5)
 }
 
-function getNextAction(driver, compliance, safety, fuel, route, finance, tripMetrics, scores) {
+function getNextAction(
+  driver: PlainRecord,
+  compliance: ComplianceMetrics,
+  safety: SafetyMetrics,
+  fuel: FuelMetrics,
+  route: RouteMetrics,
+  finance: FinanceMetrics,
+  tripMetrics: TripMetrics,
+  scores: Scores,
+): string {
   if (driver.status !== 'active') return 'Reactivar o reemplazar chofer antes de nuevas asignaciones.'
   if (compliance.hardDocumentIssues > 0) return 'Regularizar documentos bloqueantes antes de liberar ruta.'
   if (compliance.criticalFines > 0 || compliance.overdueFines > 0) return 'Cerrar multas severas o vencidas con supervisor.'
@@ -583,7 +672,7 @@ function getNextAction(driver, compliance, safety, fuel, route, finance, tripMet
   return 'Mantener asignable y monitorear en proxima ruta.'
 }
 
-function buildRecentChecklists(departures, arrivals) {
+function buildRecentChecklists(departures: PlainRecord[], arrivals: PlainRecord[]) {
   return [
     ...departures.map((item) => ({
       freightId: item.freightId,
@@ -606,7 +695,7 @@ function buildRecentChecklists(departures, arrivals) {
     .slice(0, 5)
 }
 
-function mapTripSheet(sheet) {
+function mapTripSheet(sheet: PlainRecord) {
   return {
     id: sheet.id,
     netMargin: Number(sheet.netMargin || 0),
@@ -619,7 +708,7 @@ function mapTripSheet(sheet) {
   }
 }
 
-function mapFuelRecord(record) {
+function mapFuelRecord(record: PlainRecord) {
   return {
     date: record.date,
     deviationStatus: record.deviationStatus,
@@ -630,7 +719,7 @@ function mapFuelRecord(record) {
   }
 }
 
-function mapIncident(incident) {
+function mapIncident(incident: PlainRecord) {
   return {
     estimatedCost: Number(incident.estimatedCost || 0),
     id: incident.id,
@@ -642,7 +731,9 @@ function mapIncident(incident) {
   }
 }
 
-function buildSummary(rows) {
+type DriverRow = ReturnType<typeof buildDriverRow>
+
+function buildSummary(rows: DriverRow[]) {
   const totalFuelLiters = rows.reduce((total, row) => total + row.fuel.liters, 0)
   const weightedFuelEfficiency = totalFuelLiters > 0
     ? round(rows.reduce((total, row) => total + row.fuel.averageKmPerLiter * row.fuel.liters, 0) / totalFuelLiters)
@@ -674,7 +765,7 @@ function buildSummary(rows) {
   }
 }
 
-function resolvePeriod(query) {
+function resolvePeriod(query: PlainRecord): Period {
   const days = clamp(Number(query.periodDays || query.days || DEFAULT_PERIOD_DAYS), 7, 730)
   const to = parseDate(query.to) || new Date()
   const from = parseDate(query.from) || new Date(to.getTime() - days * 24 * 60 * 60 * 1000)
@@ -682,8 +773,8 @@ function resolvePeriod(query) {
   return { days, from, to }
 }
 
-async function fetchAll(repository, query = {}) {
-  const records = []
+async function fetchAll(repository: ResourceRepositoryContract, query: ListQuery = {}): Promise<PlainRecord[]> {
+  const records: PlainRecord[] = []
 
   for (let page = 1; page <= MAX_FETCH_PAGES; page += 1) {
     const result = await repository.findAll({ ...query, limit: 100, page })
@@ -697,7 +788,7 @@ async function fetchAll(repository, query = {}) {
   return records
 }
 
-function matchesReportFilters(row, query) {
+function matchesReportFilters(row: DriverRow, query: PlainRecord): boolean {
   const driverId = String(query.driverId || 'all')
   const status = String(query.status || 'all')
   const risk = String(query.risk || 'all')
@@ -724,8 +815,8 @@ function matchesReportFilters(row, query) {
   ).includes(search)
 }
 
-function compareDriverRows(first, second) {
-  const riskWeight = {
+function compareDriverRows(first: DriverRow, second: DriverRow): number {
+  const riskWeight: Record<string, number> = {
     BLOCKED: 0,
     REVIEW: 1,
     READY: 2,
@@ -739,7 +830,7 @@ function compareDriverRows(first, second) {
   return second.scores.operationalScore - first.scores.operationalScore
 }
 
-function bandForScore(score) {
+function bandForScore(score: number): string {
   if (score >= 90) return 'EXCELLENT'
   if (score >= 82) return 'STRONG'
   if (score >= 70) return 'REVIEW'
@@ -747,7 +838,7 @@ function bandForScore(score) {
   return 'BLOCKED'
 }
 
-function inRange(value, period) {
+function inRange(value: unknown, period: Period): boolean {
   if (!value) {
     return false
   }
@@ -757,45 +848,45 @@ function inRange(value, period) {
   return timestamp >= period.from.getTime() && timestamp <= period.to.getTime()
 }
 
-function parseDate(value) {
+function parseDate(value: unknown): Date | null {
   if (!value) {
     return null
   }
 
-  const date = new Date(value)
+  const date = new Date(value as string | number | Date)
 
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-function dateValue(value) {
+function dateValue(value: unknown): number {
   if (!value) {
     return 0
   }
 
-  const timestamp = new Date(value).getTime()
+  const timestamp = new Date(value as string | number | Date).getTime()
 
   return Number.isFinite(timestamp) ? timestamp : 0
 }
 
-function latestDate(values) {
+function latestDate(values: unknown[]): unknown {
   const latest = values.filter(Boolean).sort((first, second) => dateValue(second) - dateValue(first))[0]
 
   return latest || null
 }
 
-function sum(items, field) {
+function sum(items: PlainRecord[], field: string): number {
   return round(items.reduce((total, item) => total + Number(item[field] || 0), 0))
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(Number.isFinite(value) ? value : min, min), max)
 }
 
-function round(value) {
+function round(value: number): number {
   return Math.round(Number(value || 0) * 100) / 100
 }
 
-function normalize(value) {
+function normalize(value: unknown): string {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')

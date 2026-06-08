@@ -6,11 +6,26 @@ import {
 } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
+import type {
+  ListQuery,
+  PaginatedResult,
+  PlainRecord,
+  ResourceRepositoryContract,
+} from '../../shared/types/domain.js'
 
 const availabilityValues = new Set(['available', 'busy', 'off-shift'])
 const activeCaseStatuses = new Set(['new', 'diagnosis', 'solution', 'assigned', 'repairing', 'testing'])
 
+interface NormalizeOptions {
+  creating: boolean
+}
+
 export class MechanicService {
+  private readonly mechanics: ResourceRepositoryContract
+  private readonly cases: ResourceRepositoryContract
+  private readonly specialties: ResourceRepositoryContract
+  private readonly userRoles: ResourceRepositoryContract
+
   constructor() {
     this.mechanics = createRepository(mechanicResource)
     this.cases = createRepository(workshopCaseResource)
@@ -18,7 +33,7 @@ export class MechanicService {
     this.userRoles = createRepository(userRoleAssignmentResource)
   }
 
-  async list(query) {
+  async list(query: ListQuery): Promise<PaginatedResult> {
     const result = await this.mechanics.findAll(query)
 
     return {
@@ -27,7 +42,7 @@ export class MechanicService {
     }
   }
 
-  async get(id) {
+  async get(id: string): Promise<PlainRecord> {
     const mechanic = await this.mechanics.findById(id)
 
     if (!mechanic) {
@@ -37,22 +52,22 @@ export class MechanicService {
     return this.withOperationalLoadForMechanic(mechanic)
   }
 
-  async create(payload) {
+  async create(payload: PlainRecord): Promise<PlainRecord | null> {
     const normalizedPayload = await this.normalizePayload(payload, { creating: true })
 
     return this.mechanics.create(normalizedPayload)
   }
 
-  async update(id, payload) {
+  async update(id: string, payload: PlainRecord): Promise<PlainRecord> {
     await this.get(id)
 
     const normalizedPayload = await this.normalizePayload(payload, { creating: false })
     const mechanic = await this.mechanics.update(id, normalizedPayload)
 
-    return this.withOperationalLoadForMechanic(mechanic)
+    return this.withOperationalLoadForMechanic(mechanic as PlainRecord)
   }
 
-  async remove(id) {
+  async remove(id: string): Promise<PlainRecord> {
     const mechanic = await this.get(id)
     const activeCases = await this.activeCasesForMechanic(id)
 
@@ -67,10 +82,10 @@ export class MechanicService {
       })
     }
 
-    return this.mechanics.remove(mechanic.id)
+    return this.mechanics.remove(String(mechanic.id))
   }
 
-  async normalizePayload(payload, { creating }) {
+  async normalizePayload(payload: PlainRecord, { creating }: NormalizeOptions): Promise<PlainRecord> {
     const userId = String(payload.userId || '').trim()
     const specialtyId = String(payload.specialtyId || '').trim()
     const userAssignment = userId ? await this.findMechanicUserAssignment(userId) : null
@@ -108,9 +123,9 @@ export class MechanicService {
     }
   }
 
-  async findMechanicUserAssignment(userId) {
+  async findMechanicUserAssignment(userId: string): Promise<PlainRecord> {
     const result = await this.userRoles.findAll({ limit: 100, roleCode: 'MECANICO', sort: 'userName', order: 'asc' })
-    const assignment = result.data.find((item) => item.userId === userId)
+    const assignment = result.data.find((item) => (item as PlainRecord).userId === userId)
 
     if (!assignment) {
       throw new AppError('Solo se puede asignar especialidad a usuarios con perfil MECANICO', 400, { userId })
@@ -119,7 +134,7 @@ export class MechanicService {
     return assignment
   }
 
-  async findActiveSpecialty(specialtyId) {
+  async findActiveSpecialty(specialtyId: string): Promise<PlainRecord> {
     const specialty = await this.specialties.findById(specialtyId)
 
     if (!specialty) {
@@ -133,17 +148,17 @@ export class MechanicService {
     return specialty
   }
 
-  async withOperationalLoad(mechanics) {
+  async withOperationalLoad(mechanics: PlainRecord[]): Promise<PlainRecord[]> {
     const activeCasesByMechanic = await this.activeCaseCountByMechanic()
 
     return mechanics.map((mechanic) => ({
       ...mechanic,
-      activeCases: activeCasesByMechanic.get(mechanic.id) || 0,
+      activeCases: activeCasesByMechanic.get(String(mechanic.id)) || 0,
     }))
   }
 
-  async withOperationalLoadForMechanic(mechanic) {
-    const activeCases = await this.activeCasesForMechanic(mechanic.id)
+  async withOperationalLoadForMechanic(mechanic: PlainRecord): Promise<PlainRecord> {
+    const activeCases = await this.activeCasesForMechanic(String(mechanic.id))
 
     return {
       ...mechanic,
@@ -151,14 +166,15 @@ export class MechanicService {
     }
   }
 
-  async activeCaseCountByMechanic() {
+  async activeCaseCountByMechanic(): Promise<Map<string, number>> {
     const result = await this.cases.findAll({ limit: 100, sort: 'updatedAt', order: 'desc' })
-    const counters = new Map()
+    const counters = new Map<string, number>()
 
     result.data
-      .filter((workshopCase) => activeCaseStatuses.has(workshopCase.status))
+      .filter((workshopCase) => activeCaseStatuses.has(String((workshopCase as PlainRecord).status)))
       .forEach((workshopCase) => {
-        const mechanicId = workshopCase.mechanicId || workshopCase.assignedMechanicId
+        const record = workshopCase as PlainRecord
+        const mechanicId = (record.mechanicId || record.assignedMechanicId) as string | undefined
 
         if (!mechanicId) {
           return
@@ -170,13 +186,14 @@ export class MechanicService {
     return counters
   }
 
-  async activeCasesForMechanic(mechanicId) {
+  async activeCasesForMechanic(mechanicId: string): Promise<PlainRecord[]> {
     const result = await this.cases.findAll({ limit: 100, sort: 'updatedAt', order: 'desc' })
 
     return result.data.filter((workshopCase) => {
-      const assignedMechanicId = workshopCase.mechanicId || workshopCase.assignedMechanicId
+      const record = workshopCase as PlainRecord
+      const assignedMechanicId = record.mechanicId || record.assignedMechanicId
 
-      return assignedMechanicId === mechanicId && activeCaseStatuses.has(workshopCase.status)
-    })
+      return assignedMechanicId === mechanicId && activeCaseStatuses.has(String(record.status))
+    }) as PlainRecord[]
   }
 }

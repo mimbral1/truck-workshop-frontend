@@ -1,6 +1,7 @@
 import { asyncHandler } from '../../shared/http/async-handler.js'
 import { getActorName } from '../../shared/http/request-actor.js'
-import { sendResponse } from '../../shared/http/send-response.js'
+import { sendResponse, type ResponsePayload } from '../../shared/http/send-response.js'
+import type { ListQuery } from '../../shared/types/domain.js'
 import { DriverTripSheetService } from './driver-trip-sheet.service.js'
 
 const service = new DriverTripSheetService()
@@ -13,15 +14,15 @@ export const driverTripSheetController = {
   }),
 
   get: asyncHandler(async (request, response) => {
-    const sheet = await service.get(request.params.id)
+    const sheet = await service.get(String(request.params.id))
 
     sendResponse(response, { data: sheet })
   }),
 
   list: asyncHandler(async (request, response) => {
-    const result = await service.list(request.query)
+    const result = await service.list(request.query as unknown as ListQuery)
 
-    sendResponse(response, result)
+    sendResponse(response, result as unknown as ResponsePayload)
   }),
 
   preview: asyncHandler(async (request, response) => {
@@ -31,13 +32,13 @@ export const driverTripSheetController = {
   }),
 
   remove: asyncHandler(async (request, response) => {
-    const sheet = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy']))
+    const sheet = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy']))
 
     sendResponse(response, { data: sheet })
   }),
 
   update: asyncHandler(async (request, response) => {
-    const sheet = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+    const sheet = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
     sendResponse(response, { data: sheet })
   }),

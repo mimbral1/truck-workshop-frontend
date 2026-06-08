@@ -12,13 +12,13 @@ export const createTruckDocument = asyncHandler(async (request, response) => {
 })
 
 export const updateTruckDocument = asyncHandler(async (request, response) => {
-  const document = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+  const document = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: document })
 })
 
 export const deleteTruckDocument = asyncHandler(async (request, response) => {
-  const document = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy']))
+  const document = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: document })
 })

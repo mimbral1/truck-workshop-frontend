@@ -15,9 +15,49 @@ const ROUTE_FIELD_MASK =
 const CACHE_TTL_MS = 1000 * 60 * 10
 const AVERAGE_TRUCK_SPEED_KMH = 65
 const ROAD_FACTOR_FALLBACK = 1.25
-const cache = new Map()
 
-const KNOWN_CHILE_PLACES = [
+interface CacheEntry {
+  expiresAt: number
+  value: unknown
+}
+
+const cache = new Map<string, CacheEntry>()
+
+interface Location {
+  lat: number
+  lng: number
+}
+
+interface PlaceDetails {
+  city: string
+  country: string
+  formattedAddress: string
+  location?: Location
+  name?: string
+  placeId?: string
+  postalCode: string
+  region: string
+}
+
+interface KnownChilePlace {
+  city: string
+  country: string
+  formattedAddress: string
+  location: Location
+  name: string
+  region: string
+  terms: string[]
+}
+
+interface ParsedOpenPlace {
+  osmId: string
+  osmType: string
+  details: PlaceDetails
+}
+
+type AnyRecord = Record<string, unknown>
+
+const KNOWN_CHILE_PLACES: KnownChilePlace[] = [
   {
     city: 'Santiago',
     country: 'CL',
@@ -102,7 +142,7 @@ const KNOWN_CHILE_PLACES = [
 ]
 
 export class MapsService {
-  async autocomplete(query, sessionToken) {
+  async autocomplete(query: unknown, sessionToken: unknown) {
     const normalizedQuery = String(query || '').trim()
 
     if (normalizedQuery.length < 3) {
@@ -134,7 +174,7 @@ export class MapsService {
     return suggestions
   }
 
-  async placeDetails(placeId) {
+  async placeDetails(placeId: unknown): Promise<PlaceDetails> {
     const normalizedPlaceId = normalizePlaceId(placeId)
 
     if (!normalizedPlaceId) {
@@ -145,7 +185,7 @@ export class MapsService {
     const cached = getCached(cacheKey)
 
     if (cached) {
-      return cached
+      return cached as PlaceDetails
     }
 
     if (isOpenPlaceId(normalizedPlaceId)) {
@@ -155,7 +195,7 @@ export class MapsService {
       return details
     }
 
-    let googleError
+    let googleError: unknown
 
     if (hasGoogleMapsKey()) {
       try {
@@ -171,7 +211,7 @@ export class MapsService {
     throw googleError || new AppError('No se pudo resolver esa direccion. Busca por texto para usar OpenStreetMap.', 404)
   }
 
-  async route(payload) {
+  async route(payload: AnyRecord) {
     const originInput = payload?.origin
     const destinationInput = payload?.destination
 
@@ -204,7 +244,7 @@ export class MapsService {
     return openRoute
   }
 
-  async staticRoute(query) {
+  async staticRoute(query: AnyRecord) {
     const polyline = String(query?.polyline || '').trim()
     const originLat = Number(query?.originLat)
     const originLng = Number(query?.originLng)
@@ -247,8 +287,8 @@ export class MapsService {
   }
 }
 
-async function autocompleteWithGoogle(normalizedQuery, sessionToken) {
-  const data = await fetchGoogleJson(
+async function autocompleteWithGoogle(normalizedQuery: string, sessionToken: unknown) {
+  const data = (await fetchGoogleJson(
     PLACES_AUTOCOMPLETE_URL,
     {
       includedRegionCodes: [env.googleMaps.country],
@@ -259,22 +299,26 @@ async function autocompleteWithGoogle(normalizedQuery, sessionToken) {
     {
       fieldMask: AUTOCOMPLETE_FIELD_MASK,
     },
-  )
+  )) as AnyRecord
 
-  return (data.suggestions || [])
-    .map((item) => item.placePrediction)
-    .filter(Boolean)
+  return ((data.suggestions as AnyRecord[]) || [])
+    .map((item) => item.placePrediction as AnyRecord | undefined)
+    .filter((prediction): prediction is AnyRecord => Boolean(prediction))
     .map((prediction) => ({
-      description: prediction.text?.text || '',
-      mainText: prediction.structuredFormat?.mainText?.text || prediction.text?.text || '',
+      description: (prediction.text as AnyRecord | undefined)?.text || '',
+      mainText:
+        ((prediction.structuredFormat as AnyRecord | undefined)?.mainText as AnyRecord | undefined)?.text ||
+        (prediction.text as AnyRecord | undefined)?.text ||
+        '',
       placeId: prediction.placeId,
       provider: 'google',
-      secondaryText: prediction.structuredFormat?.secondaryText?.text || '',
+      secondaryText:
+        ((prediction.structuredFormat as AnyRecord | undefined)?.secondaryText as AnyRecord | undefined)?.text || '',
     }))
     .filter((item) => item.placeId && item.description)
 }
 
-async function autocompleteWithOpenMaps(query) {
+async function autocompleteWithOpenMaps(query: string) {
   const places = await searchOpenPlaces(query, 7)
 
   return places.map((place) => {
@@ -290,9 +334,9 @@ async function autocompleteWithOpenMaps(query) {
   })
 }
 
-async function placeDetailsWithGoogle(placeId) {
+async function placeDetailsWithGoogle(placeId: string): Promise<PlaceDetails> {
   const url = `${PLACE_DETAILS_URL}/${encodeURIComponent(placeId)}`
-  const data = await fetchGoogleJson(
+  const data = (await fetchGoogleJson(
     url,
     undefined,
     {
@@ -302,12 +346,12 @@ async function placeDetailsWithGoogle(placeId) {
     {
       languageCode: env.googleMaps.language,
     },
-  )
+  )) as AnyRecord
 
   return normalizeGooglePlaceDetails(data)
 }
 
-async function placeDetailsWithOpenMaps(placeId) {
+async function placeDetailsWithOpenMaps(placeId: string): Promise<PlaceDetails> {
   const parsedPlace = parseOpenPlaceId(placeId)
 
   if (!parsedPlace) {
@@ -323,7 +367,7 @@ async function placeDetailsWithOpenMaps(placeId) {
       url.searchParams.set('format', 'jsonv2')
       url.searchParams.set('osm_ids', lookupId)
 
-      const data = await fetchOpenJson(url)
+      const data = (await fetchOpenJson(url)) as AnyRecord[]
       const details = normalizeOpenPlace(data?.[0])
 
       if (details) {
@@ -337,7 +381,7 @@ async function placeDetailsWithOpenMaps(placeId) {
   return parsedPlace.details
 }
 
-async function routeWithGoogle(payload) {
+async function routeWithGoogle(payload: AnyRecord) {
   const origin = buildGoogleWaypoint(payload?.origin)
   const destination = buildGoogleWaypoint(payload?.destination)
 
@@ -345,7 +389,7 @@ async function routeWithGoogle(payload) {
     throw new AppError('Origen y destino son obligatorios para calcular la ruta.', 400)
   }
 
-  const data = await fetchGoogleJson(
+  const data = (await fetchGoogleJson(
     ROUTES_URL,
     {
       computeAlternativeRoutes: false,
@@ -363,19 +407,20 @@ async function routeWithGoogle(payload) {
     {
       fieldMask: ROUTE_FIELD_MASK,
     },
-  )
+  )) as AnyRecord
 
-  const route = data.routes?.[0]
+  const route = (data.routes as AnyRecord[] | undefined)?.[0]
 
   if (!route) {
     throw new AppError('Google Maps no encontro una ruta operativa para ese origen y destino.', 404)
   }
 
-  const originDetails = await enrichGoogleWaypoint(payload.origin, route.legs?.[0]?.startLocation)
-  const destinationDetails = await enrichGoogleWaypoint(payload.destination, route.legs?.at(-1)?.endLocation)
+  const legs = route.legs as AnyRecord[] | undefined
+  const originDetails = await enrichGoogleWaypoint(payload.origin, legs?.[0]?.startLocation)
+  const destinationDetails = await enrichGoogleWaypoint(payload.destination, legs?.at(-1)?.endLocation)
   const distanceMeters = Number(route.distanceMeters || 0)
   const durationSeconds = parseGoogleDuration(route.duration)
-  const encodedPolyline = route.polyline?.encodedPolyline || ''
+  const encodedPolyline = (route.polyline as AnyRecord | undefined)?.encodedPolyline || ''
 
   return {
     bounds: normalizeViewport(route.viewport),
@@ -391,13 +436,13 @@ async function routeWithGoogle(payload) {
     staticMapUrl: buildStaticRouteUrl({
       destination: destinationDetails.location,
       origin: originDetails.location,
-      polyline: encodedPolyline,
+      polyline: encodedPolyline as string,
     }),
-    tolls: normalizeGoogleTollInfo(route.travelAdvisory?.tollInfo),
+    tolls: normalizeGoogleTollInfo((route.travelAdvisory as AnyRecord | undefined)?.tollInfo),
   }
 }
 
-async function routeWithOpenMaps(payload) {
+async function routeWithOpenMaps(payload: AnyRecord) {
   const [originDetails, destinationDetails] = await Promise.all([
     resolveOpenWaypoint(payload.origin),
     resolveOpenWaypoint(payload.destination),
@@ -416,7 +461,7 @@ async function routeWithOpenMaps(payload) {
     })
   }
 
-  const fallbackDistanceMeters = Math.round(haversineDistanceMeters(originDetails.location, destinationDetails.location) * ROAD_FACTOR_FALLBACK)
+  const fallbackDistanceMeters = Math.round(haversineDistanceMeters(originDetails.location as Location, destinationDetails.location as Location) * ROAD_FACTOR_FALLBACK)
   const fallbackDurationSeconds = Math.round((fallbackDistanceMeters / 1000 / AVERAGE_TRUCK_SPEED_KMH) * 3600)
 
   return buildOpenRouteResult({
@@ -429,7 +474,16 @@ async function routeWithOpenMaps(payload) {
   })
 }
 
-function buildOpenRouteResult({ destinationDetails, durationSeconds, encodedPolyline, originDetails, provider, routeDistanceMeters }) {
+interface BuildOpenRouteResultInput {
+  destinationDetails: PlaceDetails
+  durationSeconds: number
+  encodedPolyline: string
+  originDetails: PlaceDetails
+  provider: string
+  routeDistanceMeters: number
+}
+
+function buildOpenRouteResult({ destinationDetails, durationSeconds, encodedPolyline, originDetails, provider, routeDistanceMeters }: BuildOpenRouteResultInput) {
   return {
     bounds: buildBounds([originDetails.location, destinationDetails.location]),
     destination: destinationDetails,
@@ -445,7 +499,7 @@ function buildOpenRouteResult({ destinationDetails, durationSeconds, encodedPoly
   }
 }
 
-async function calculateOsrmRoute(origin, destination) {
+async function calculateOsrmRoute(origin?: Location, destination?: Location) {
   if (!origin || !destination) {
     return null
   }
@@ -465,13 +519,13 @@ async function calculateOsrmRoute(origin, destination) {
         'User-Agent': env.openMaps.userAgent,
       },
     })
-    const data = await response.json().catch(() => ({}))
+    const data = (await response.json().catch(() => ({}))) as AnyRecord
 
-    if (!response.ok || data.code !== 'Ok' || !data.routes?.[0]) {
+    if (!response.ok || data.code !== 'Ok' || !(data.routes as AnyRecord[] | undefined)?.[0]) {
       return null
     }
 
-    const route = data.routes[0]
+    const route = (data.routes as AnyRecord[])[0]
     const distanceMeters = Math.round(Number(route.distance || 0))
     const durationSeconds = Math.round(Number(route.duration || 0))
 
@@ -482,16 +536,16 @@ async function calculateOsrmRoute(origin, destination) {
     return {
       distanceMeters,
       durationSeconds,
-      encodedPolyline: route.geometry || '',
+      encodedPolyline: (route.geometry as string) || '',
     }
   } catch {
     return null
   }
 }
 
-async function resolveOpenWaypoint(input) {
+async function resolveOpenWaypoint(input: unknown): Promise<PlaceDetails> {
   const address = getWaypointText(input)
-  const placeId = typeof input === 'object' ? normalizePlaceId(input?.placeId) : ''
+  const placeId = typeof input === 'object' ? normalizePlaceId((input as AnyRecord)?.placeId) : ''
   const parsedPlace = parseOpenPlaceId(placeId, address)
 
   if (parsedPlace?.details?.location && !address) {
@@ -516,7 +570,7 @@ async function resolveOpenWaypoint(input) {
   throw new AppError(`No se pudo geocodificar "${address || 'direccion'}". Ajusta origen/destino o registra km manual.`, 404)
 }
 
-async function searchOpenPlaces(query, limit = 7) {
+async function searchOpenPlaces(query: unknown, limit = 7): Promise<PlaceDetails[]> {
   const normalizedQuery = String(query || '').trim()
 
   if (normalizedQuery.length < 3) {
@@ -533,10 +587,10 @@ async function searchOpenPlaces(query, limit = 7) {
     url.searchParams.set('limit', String(limit))
     url.searchParams.set('q', normalizedQuery)
 
-    const data = await fetchOpenJson(url)
-    const places = (Array.isArray(data) ? data : [])
+    const data = (await fetchOpenJson(url)) as unknown
+    const places = (Array.isArray(data) ? (data as AnyRecord[]) : [])
       .map(normalizeOpenPlace)
-      .filter(Boolean)
+      .filter((place): place is PlaceDetails => Boolean(place))
 
     return dedupePlaces([...places, ...knownPlaces]).slice(0, limit)
   } catch {
@@ -544,14 +598,19 @@ async function searchOpenPlaces(query, limit = 7) {
   }
 }
 
-async function fetchGoogleJson(url, body, options = {}, query = {}) {
+interface FetchGoogleOptions {
+  fieldMask?: string
+  method?: string
+}
+
+async function fetchGoogleJson(url: string, body: AnyRecord | undefined, options: FetchGoogleOptions = {}, query: AnyRecord = {}): Promise<unknown> {
   requireGoogleMapsKey()
 
   const requestUrl = new URL(url)
 
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
-      requestUrl.searchParams.set(key, value)
+      requestUrl.searchParams.set(key, String(value))
     }
   })
 
@@ -566,16 +625,16 @@ async function fetchGoogleJson(url, body, options = {}, query = {}) {
     method,
   })
 
-  const data = await response.json().catch(() => ({}))
+  const data = (await response.json().catch(() => ({}))) as AnyRecord
 
   if (!response.ok) {
-    throw new AppError(data.error?.message || 'Google Maps rechazo la solicitud.', response.status, data.error)
+    throw new AppError((data.error as AnyRecord | undefined)?.message as string || 'Google Maps rechazo la solicitud.', response.status, data.error)
   }
 
   return data
 }
 
-async function fetchOpenJson(url) {
+async function fetchOpenJson(url: URL): Promise<unknown> {
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
@@ -583,7 +642,7 @@ async function fetchOpenJson(url) {
       'User-Agent': env.openMaps.userAgent,
     },
   })
-  const data = await response.json().catch(() => ({}))
+  const data = (await response.json().catch(() => ({}))) as unknown
 
   if (!response.ok) {
     throw new AppError('OpenStreetMap rechazo la solicitud de geocodificacion.', 502, {
@@ -594,7 +653,7 @@ async function fetchOpenJson(url) {
   return data
 }
 
-function buildGoogleWaypoint(value) {
+function buildGoogleWaypoint(value: unknown): AnyRecord | null {
   if (typeof value === 'string') {
     const address = value.trim()
     return address ? { address } : null
@@ -604,30 +663,33 @@ function buildGoogleWaypoint(value) {
     return null
   }
 
-  if (value.placeId) {
-    return { placeId: normalizePlaceId(value.placeId) }
+  const record = value as AnyRecord
+
+  if (record.placeId) {
+    return { placeId: normalizePlaceId(record.placeId) }
   }
 
-  const address = String(value.address || value.formattedAddress || '').trim()
+  const address = String(record.address || record.formattedAddress || '').trim()
 
   return address ? { address } : null
 }
 
-async function enrichGoogleWaypoint(input, fallbackLocation) {
-  const address = typeof input === 'string' ? input : input?.address || input?.formattedAddress
-  const fallback = {
+async function enrichGoogleWaypoint(input: unknown, fallbackLocation: unknown): Promise<PlaceDetails> {
+  const record = typeof input === 'object' && input ? (input as AnyRecord) : undefined
+  const address = typeof input === 'string' ? input : record?.address || record?.formattedAddress
+  const fallback: PlaceDetails = {
     city: '',
     country: '',
     formattedAddress: String(address || '').trim(),
     location: normalizeLocation(fallbackLocation),
-    placeId: typeof input === 'object' ? normalizePlaceId(input?.placeId) : undefined,
+    placeId: typeof input === 'object' ? normalizePlaceId(record?.placeId) : undefined,
     postalCode: '',
     region: '',
   }
 
-  if (typeof input === 'object' && input?.placeId) {
+  if (typeof input === 'object' && record?.placeId) {
     try {
-      return await new MapsService().placeDetails(input.placeId)
+      return await new MapsService().placeDetails(record.placeId)
     } catch {
       return fallback
     }
@@ -636,23 +698,23 @@ async function enrichGoogleWaypoint(input, fallbackLocation) {
   return fallback
 }
 
-function normalizeGooglePlaceDetails(place) {
-  const postalAddress = place.postalAddress || {}
+function normalizeGooglePlaceDetails(place: AnyRecord): PlaceDetails {
+  const postalAddress = (place.postalAddress as AnyRecord | undefined) || {}
   const location = normalizeLocation(place.location)
 
   return {
-    city: postalAddress.locality || getAddressComponent(place.addressComponents, 'locality'),
-    country: postalAddress.regionCode || getAddressComponent(place.addressComponents, 'country'),
-    formattedAddress: place.formattedAddress || '',
+    city: (postalAddress.locality as string) || getAddressComponent(place.addressComponents as AnyRecord[] | undefined, 'locality'),
+    country: (postalAddress.regionCode as string) || getAddressComponent(place.addressComponents as AnyRecord[] | undefined, 'country'),
+    formattedAddress: (place.formattedAddress as string) || '',
     location,
-    name: place.displayName?.text || '',
-    placeId: place.id,
-    postalCode: postalAddress.postalCode || getAddressComponent(place.addressComponents, 'postal_code'),
-    region: postalAddress.administrativeArea || getAddressComponent(place.addressComponents, 'administrative_area_level_1'),
+    name: (place.displayName as AnyRecord | undefined)?.text as string || '',
+    placeId: place.id as string | undefined,
+    postalCode: (postalAddress.postalCode as string) || getAddressComponent(place.addressComponents as AnyRecord[] | undefined, 'postal_code'),
+    region: (postalAddress.administrativeArea as string) || getAddressComponent(place.addressComponents as AnyRecord[] | undefined, 'administrative_area_level_1'),
   }
 }
 
-function normalizeOpenPlace(place) {
+function normalizeOpenPlace(place: AnyRecord | undefined | null): PlaceDetails | null {
   if (!place) {
     return null
   }
@@ -663,38 +725,40 @@ function normalizeOpenPlace(place) {
     return null
   }
 
-  const address = place.address || {}
-  const formattedAddress = place.display_name || [place.name, address.road, address.city, address.state, address.country].filter(Boolean).join(', ')
+  const address = (place.address as AnyRecord | undefined) || {}
+  const formattedAddress =
+    (place.display_name as string) ||
+    [place.name, address.road, address.city, address.state, address.country].filter(Boolean).join(', ')
   const name =
-    place.name ||
-    address.amenity ||
-    address.road ||
-    address.suburb ||
-    address.city ||
-    address.town ||
-    address.village ||
+    (place.name as string) ||
+    (address.amenity as string) ||
+    (address.road as string) ||
+    (address.suburb as string) ||
+    (address.city as string) ||
+    (address.town as string) ||
+    (address.village as string) ||
     formattedAddress.split(',')[0]
 
   return {
-    city: address.city || address.town || address.village || address.municipality || address.county || '',
-    country: String(address.country_code || '').toUpperCase() || address.country || '',
+    city: (address.city as string) || (address.town as string) || (address.village as string) || (address.municipality as string) || (address.county as string) || '',
+    country: String(address.country_code || '').toUpperCase() || (address.country as string) || '',
     formattedAddress,
     location,
     name,
     placeId: buildOpenPlaceId(place),
-    postalCode: address.postcode || '',
-    region: address.state || address.region || '',
+    postalCode: (address.postcode as string) || '',
+    region: (address.state as string) || (address.region as string) || '',
   }
 }
 
-function buildOpenPlaceId(place) {
+function buildOpenPlaceId(place: AnyRecord): string {
   const lat = Number(place.lat)
   const lng = Number(place.lon)
 
   return `osm:${place.osm_type || 'node'}:${place.osm_id || place.place_id}:${lat}:${lng}`
 }
 
-function parseOpenPlaceId(placeId, address = '') {
+function parseOpenPlaceId(placeId: unknown, address = ''): ParsedOpenPlace | null {
   if (!isOpenPlaceId(placeId)) {
     return null
   }
@@ -713,28 +777,28 @@ function parseOpenPlaceId(placeId, address = '') {
       formattedAddress: String(address || '').trim(),
       location,
       name: String(address || '').split(',')[0] || '',
-      placeId,
+      placeId: String(placeId),
       postalCode: '',
       region: '',
     },
   }
 }
 
-function buildNominatimLookupId(parsedPlace) {
+function buildNominatimLookupId(parsedPlace: ParsedOpenPlace): string {
   if (!parsedPlace?.osmId) {
     return ''
   }
 
-  const typePrefix = {
+  const typePrefix = ({
     node: 'N',
     relation: 'R',
     way: 'W',
-  }[String(parsedPlace.osmType || '').toLowerCase()]
+  } as Record<string, string>)[String(parsedPlace.osmType || '').toLowerCase()]
 
   return typePrefix ? `${typePrefix}${parsedPlace.osmId}` : ''
 }
 
-function findKnownChilePlaces(query, limit) {
+function findKnownChilePlaces(query: string, limit: number): PlaceDetails[] {
   const normalizedQuery = normalizeSearchText(query)
 
   return KNOWN_CHILE_PLACES.filter((place) =>
@@ -749,8 +813,8 @@ function findKnownChilePlaces(query, limit) {
     .slice(0, limit)
 }
 
-function dedupePlaces(places) {
-  const seen = new Set()
+function dedupePlaces(places: PlaceDetails[]): PlaceDetails[] {
+  const seen = new Set<string>()
 
   return places.filter((place) => {
     const key = place.placeId || `${place.location?.lat}:${place.location?.lng}:${place.formattedAddress}`
@@ -764,7 +828,7 @@ function dedupePlaces(places) {
   })
 }
 
-function hasWaypointInput(value) {
+function hasWaypointInput(value: unknown): boolean {
   if (typeof value === 'string') {
     return value.trim().length >= 3
   }
@@ -773,14 +837,14 @@ function hasWaypointInput(value) {
     return false
   }
 
-  return Boolean(getWaypointText(value) || normalizePlaceId(value.placeId))
+  return Boolean(getWaypointText(value) || normalizePlaceId((value as AnyRecord).placeId))
 }
 
-function inputHasOpenPlaceId(value) {
-  return typeof value === 'object' && isOpenPlaceId(normalizePlaceId(value?.placeId))
+function inputHasOpenPlaceId(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && isOpenPlaceId(normalizePlaceId((value as AnyRecord)?.placeId))
 }
 
-function getWaypointText(value) {
+function getWaypointText(value: unknown): string {
   if (typeof value === 'string') {
     return value.trim()
   }
@@ -789,26 +853,29 @@ function getWaypointText(value) {
     return ''
   }
 
-  return String(value.address || value.formattedAddress || value.description || value.name || '').trim()
+  const record = value as AnyRecord
+
+  return String(record.address || record.formattedAddress || record.description || record.name || '').trim()
 }
 
-function normalizePlaceId(value) {
+function normalizePlaceId(value: unknown): string {
   return String(value || '')
     .trim()
     .replace(/^places\//, '')
 }
 
-function isOpenPlaceId(placeId) {
+function isOpenPlaceId(placeId: unknown): boolean {
   return String(placeId || '').startsWith('osm:')
 }
 
-function normalizeLocation(location) {
+function normalizeLocation(location: unknown): Location | undefined {
   if (!location) {
     return undefined
   }
 
-  const lat = Number(location.latitude ?? location.latLng?.latitude ?? location.lat)
-  const lng = Number(location.longitude ?? location.latLng?.longitude ?? location.lng)
+  const record = location as AnyRecord
+  const lat = Number(record.latitude ?? (record.latLng as AnyRecord | undefined)?.latitude ?? record.lat)
+  const lng = Number(record.longitude ?? (record.latLng as AnyRecord | undefined)?.longitude ?? record.lng)
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return undefined
@@ -817,19 +884,21 @@ function normalizeLocation(location) {
   return { lat, lng }
 }
 
-function normalizeViewport(viewport) {
+function normalizeViewport(viewport: unknown) {
   if (!viewport) {
     return undefined
   }
 
+  const record = viewport as AnyRecord
+
   return {
-    high: normalizeLocation(viewport.high),
-    low: normalizeLocation(viewport.low),
+    high: normalizeLocation(record.high),
+    low: normalizeLocation(record.low),
   }
 }
 
-function buildBounds(locations) {
-  const validLocations = locations.filter(Boolean)
+function buildBounds(locations: Array<Location | undefined>) {
+  const validLocations = locations.filter((location): location is Location => Boolean(location))
 
   if (validLocations.length === 0) {
     return undefined
@@ -850,14 +919,14 @@ function buildBounds(locations) {
   }
 }
 
-function normalizeGoogleTollInfo(tollInfo) {
-  const estimatedPrices = (tollInfo?.estimatedPrice || []).map((price) => {
+function normalizeGoogleTollInfo(tollInfo: unknown) {
+  const estimatedPrices = (((tollInfo as AnyRecord | undefined)?.estimatedPrice as AnyRecord[] | undefined) || []).map((price) => {
     const units = Number(price.units || 0)
     const nanos = Number(price.nanos || 0)
 
     return {
       amount: Math.round((units + nanos / 1_000_000_000) * 100) / 100,
-      currencyCode: price.currencyCode || 'CLP',
+      currencyCode: (price.currencyCode as string) || 'CLP',
       nanos,
       units,
     }
@@ -890,17 +959,17 @@ function normalizeOpenTollInfo() {
   }
 }
 
-function getAddressComponent(components = [], type) {
-  return components.find((component) => component.types?.includes(type))?.longText || ''
+function getAddressComponent(components: AnyRecord[] = [], type: string): string {
+  return (components.find((component) => (component.types as string[] | undefined)?.includes(type))?.longText as string) || ''
 }
 
-function parseGoogleDuration(value) {
+function parseGoogleDuration(value: unknown): number {
   const match = String(value || '').match(/^(\d+(?:\.\d+)?)s$/)
 
   return match ? Math.round(Number(match[1])) : 0
 }
 
-function haversineDistanceMeters(origin, destination) {
+function haversineDistanceMeters(origin: Location, destination: Location): number {
   const earthRadiusMeters = 6371_000
   const lat1 = toRadians(origin.lat)
   const lat2 = toRadians(destination.lat)
@@ -912,15 +981,15 @@ function haversineDistanceMeters(origin, destination) {
   return earthRadiusMeters * c
 }
 
-function toRadians(value) {
+function toRadians(value: number): number {
   return (value * Math.PI) / 180
 }
 
-function roundKm(distanceMeters) {
+function roundKm(distanceMeters: unknown): number {
   return Math.round((Number(distanceMeters || 0) / 1000) * 10) / 10
 }
 
-function formatDistance(distanceMeters) {
+function formatDistance(distanceMeters: number): string {
   if (!distanceMeters) {
     return '0 km'
   }
@@ -931,7 +1000,7 @@ function formatDistance(distanceMeters) {
   })} km`
 }
 
-function formatDuration(seconds) {
+function formatDuration(seconds: number): string {
   if (!seconds) {
     return 'Por calcular'
   }
@@ -951,7 +1020,13 @@ function formatDuration(seconds) {
   return `${hours} h ${minutes} min`
 }
 
-function buildStaticRouteUrl({ destination, origin, polyline }) {
+interface BuildStaticRouteUrlInput {
+  destination?: Location
+  origin?: Location
+  polyline: string
+}
+
+function buildStaticRouteUrl({ destination, origin, polyline }: BuildStaticRouteUrlInput): string | undefined {
   if (!origin || !destination || !polyline) {
     return undefined
   }
@@ -967,21 +1042,21 @@ function buildStaticRouteUrl({ destination, origin, polyline }) {
   return `/maps/static-route?${params.toString()}`
 }
 
-function hasGoogleMapsKey() {
+function hasGoogleMapsKey(): boolean {
   return Boolean(env.googleMaps.apiKey)
 }
 
-function requireGoogleMapsKey() {
+function requireGoogleMapsKey(): void {
   if (!hasGoogleMapsKey()) {
     throw new AppError('Configura GOOGLE_MAPS_API_KEY en el backend para usar Google Maps.', 503)
   }
 }
 
-function normalizeBaseUrl(value) {
+function normalizeBaseUrl(value: unknown): string {
   return String(value || '').replace(/\/+$/, '')
 }
 
-function normalizeSearchText(value) {
+function normalizeSearchText(value: unknown): string {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -989,11 +1064,11 @@ function normalizeSearchText(value) {
     .trim()
 }
 
-function removeUndefined(value) {
+function removeUndefined(value: AnyRecord): AnyRecord {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined))
 }
 
-function getCached(key) {
+function getCached(key: string): unknown {
   const cached = cache.get(key)
 
   if (!cached || cached.expiresAt < Date.now()) {
@@ -1004,7 +1079,7 @@ function getCached(key) {
   return cached.value
 }
 
-function setCached(key, value) {
+function setCached(key: string, value: unknown): void {
   cache.set(key, {
     expiresAt: Date.now() + CACHE_TTL_MS,
     value,

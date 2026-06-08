@@ -7,6 +7,7 @@ import {
 } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
+import type { PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 import { stripImmutableFields } from '../../shared/utils/payload-sanitizers.js'
 
 const VALID_DOCUMENT_TYPES = new Set([
@@ -23,7 +24,18 @@ const NON_EXPIRING_TYPES = new Set(['REGISTRATION', 'PURCHASE_INVOICE'])
 const BLOCKING_STATUSES = new Set(['EXPIRED', 'MISSING'])
 const WARNING_STATUSES = new Set(['EXPIRES_SOON_15', 'EXPIRES_SOON_30'])
 
+interface NormalizePayloadOptions {
+  partial?: boolean
+  current?: PlainRecord
+}
+
 export class TruckDocumentService {
+  private readonly documents: ResourceRepositoryContract
+  private readonly availability: ResourceRepositoryContract
+  private readonly healthScores: ResourceRepositoryContract
+  private readonly timeline: ResourceRepositoryContract
+  private readonly trucks: ResourceRepositoryContract
+
   constructor() {
     this.documents = createRepository(truckDocumentResource)
     this.availability = createRepository(fleetAvailabilityResource)
@@ -32,13 +44,13 @@ export class TruckDocumentService {
     this.trucks = createRepository(fleetTruckResource)
   }
 
-  async create(payload, actorName) {
+  async create(payload: PlainRecord, actorName: string) {
     const truck = await this.requireTruck(payload.truckId)
-    const document = await this.documents.create({
+    const document = (await this.documents.create({
       ...normalizeDocumentPayload(payload),
       createdBy: payload.createdBy || actorName,
       updatedBy: payload.updatedBy || actorName,
-    })
+    })) as PlainRecord
 
     await this.syncRelatedFleetState(document.truckId, actorName, document)
     await this.createTimelineEvent(document, truck, actorName, 'Documento cargado')
@@ -46,14 +58,14 @@ export class TruckDocumentService {
     return document
   }
 
-  async update(id, payload, actorName) {
+  async update(id: string, payload: PlainRecord, actorName: string) {
     const current = await this.requireDocument(id)
     const truckId = payload.truckId || current.truckId
     const truck = await this.requireTruck(truckId)
-    const document = await this.documents.update(id, {
+    const document = (await this.documents.update(id, {
       ...normalizeDocumentPayload(stripImmutableFields(payload, ['deletedBy']), { current, partial: true }),
       updatedBy: actorName,
-    })
+    })) as PlainRecord
 
     await this.syncRelatedFleetState(current.truckId, actorName, document)
 
@@ -66,18 +78,18 @@ export class TruckDocumentService {
     return document
   }
 
-  async remove(id, actorName) {
+  async remove(id: string, actorName: string) {
     const current = await this.requireDocument(id)
 
     await this.documents.update(id, { deletedBy: actorName, updatedBy: actorName })
-    const document = await this.documents.remove(id)
+    const document = (await this.documents.remove(id)) as PlainRecord
     await this.syncRelatedFleetState(current.truckId, actorName, document)
     await this.createTimelineEvent(document, await this.requireTruck(current.truckId), actorName, 'Documento eliminado')
 
     return document
   }
 
-  async requireDocument(id) {
+  async requireDocument(id: string): Promise<PlainRecord> {
     const document = await this.documents.findById(id)
 
     if (!document) {
@@ -87,7 +99,7 @@ export class TruckDocumentService {
     return document
   }
 
-  async requireTruck(truckId) {
+  async requireTruck(truckId: unknown): Promise<PlainRecord> {
     const id = String(truckId || '').trim()
 
     if (!id) {
@@ -103,17 +115,17 @@ export class TruckDocumentService {
     return truck
   }
 
-  async syncRelatedFleetState(truckId, actorName, sourceDocument) {
+  async syncRelatedFleetState(truckId: unknown, actorName: string, sourceDocument?: PlainRecord) {
     const [truck, documentsResult] = await Promise.all([
-      this.trucks.findById(truckId),
-      this.documents.findAll({ truckId, limit: 100, sort: 'expiresAt', order: 'asc' }),
+      this.trucks.findById(String(truckId)),
+      this.documents.findAll({ truckId: truckId as string, limit: 100, sort: 'expiresAt', order: 'asc' }),
     ])
 
     if (!truck) {
       return
     }
 
-    const documents = documentsResult.data.map((document) => ({
+    const documents = (documentsResult.data as PlainRecord[]).map((document) => ({
       ...document,
       status: calculateDocumentStatus(document),
     }))
@@ -135,10 +147,10 @@ export class TruckDocumentService {
     }
   }
 
-  async blockTruckForDocuments(truck, document, actorName) {
+  async blockTruckForDocuments(truck: PlainRecord, document: PlainRecord, actorName: string) {
     const blockerReason = `${documentTypeLabel(document.documentType)} ${document.status === 'MISSING' ? 'faltante' : 'vencido'}`
 
-    await this.trucks.update(truck.id, {
+    await this.trucks.update(String(truck.id), {
       mainBlocker: blockerReason,
       notes: mergeNotes(truck.notes, 'Bloqueado por control documental.'),
       operationalStatus: 'BLOCKED',
@@ -147,9 +159,9 @@ export class TruckDocumentService {
     const availabilityResult = await this.availability.findAll({
       column: 'EXPIRED_DOCUMENTS',
       limit: 100,
-      truckId: truck.id,
+      truckId: truck.id as string,
     })
-    const existing = availabilityResult.data[0]
+    const existing = availabilityResult.data[0] as PlainRecord | undefined
     const payload = {
       availableAt: document.expiresAt || null,
       blockerReason,
@@ -158,7 +170,7 @@ export class TruckDocumentService {
     }
 
     if (existing) {
-      await this.availability.update(existing.id, payload)
+      await this.availability.update(String(existing.id), payload)
     } else {
       await this.availability.create(payload)
     }
@@ -166,32 +178,32 @@ export class TruckDocumentService {
     await this.createTimelineEvent(document, truck, actorName, blockerReason)
   }
 
-  async clearDocumentBlock(truck) {
+  async clearDocumentBlock(truck: PlainRecord) {
     if (truck.operationalStatus !== 'BLOCKED' || !isDocumentBlocker(truck.mainBlocker)) {
       return
     }
 
-    await this.trucks.update(truck.id, {
+    await this.trucks.update(String(truck.id), {
       mainBlocker: null,
       operationalStatus: 'AVAILABLE',
     })
   }
 
-  async clearExpiredDocumentsAvailability(truckId) {
+  async clearExpiredDocumentsAvailability(truckId: unknown) {
     const result = await this.availability.findAll({
       column: 'EXPIRED_DOCUMENTS',
       limit: 100,
-      truckId,
+      truckId: truckId as string,
     })
 
-    for (const item of result.data) {
-      await this.availability.remove(item.id)
+    for (const item of result.data as PlainRecord[]) {
+      await this.availability.remove(String(item.id))
     }
   }
 
-  async upsertHealthScore(truck, blockingDocuments, warningDocuments) {
-    const currentResult = await this.healthScores.findAll({ limit: 1, truckId: truck.id })
-    const current = currentResult.data[0]
+  async upsertHealthScore(truck: PlainRecord, blockingDocuments: PlainRecord[], warningDocuments: PlainRecord[]) {
+    const currentResult = await this.healthScores.findAll({ limit: 1, truckId: truck.id as string })
+    const current = currentResult.data[0] as PlainRecord | undefined
     const documentPenalty = blockingDocuments.length > 0 ? 20 : warningDocuments.length > 0 ? 8 : 0
     const documentDeductionLabels = new Set([
       'Documento vencido',
@@ -199,7 +211,9 @@ export class TruckDocumentService {
       'Documento por vencer',
       'Riesgo documental',
     ])
-    const baseDeductions = (current?.deductions || []).filter((deduction) => !documentDeductionLabels.has(deduction.label))
+    const baseDeductions = ((current?.deductions as PlainRecord[] | undefined) || []).filter(
+      (deduction) => !documentDeductionLabels.has(deduction.label as string),
+    )
     const deductions = documentPenalty > 0
       ? [
           ...baseDeductions,
@@ -219,16 +233,16 @@ export class TruckDocumentService {
     }
 
     if (current) {
-      return this.healthScores.update(current.id || `truck-health-score-${truck.id}`, payload)
+      return this.healthScores.update(String(current.id || `truck-health-score-${String(truck.id)}`), payload)
     }
 
     return this.healthScores.create({
-      id: `truck-health-score-${truck.id}`,
+      id: `truck-health-score-${String(truck.id)}`,
       ...payload,
     })
   }
 
-  async createTimelineEvent(document, truck, actorName, title) {
+  async createTimelineEvent(document: PlainRecord, truck: PlainRecord, actorName: string, title: string) {
     return this.timeline.create({
       createdBy: actorName || 'Sistema',
       description: `${documentTypeLabel(document.documentType)} ${document.documentNumber || ''} - ${documentStatusLabel(document.status)}.`,
@@ -242,8 +256,8 @@ export class TruckDocumentService {
   }
 }
 
-export function normalizeDocumentPayload(payload, options = {}) {
-  const normalized = { ...payload }
+export function normalizeDocumentPayload(payload: PlainRecord, options: NormalizePayloadOptions = {}): PlainRecord {
+  const normalized: PlainRecord = { ...payload }
 
   if (!options.partial || payload.truckId !== undefined) {
     normalized.truckId = String(payload.truckId || options.current?.truckId || '').trim()
@@ -286,8 +300,8 @@ export function normalizeDocumentPayload(payload, options = {}) {
   return normalized
 }
 
-function calculateDocumentStatus(document) {
-  if (NON_EXPIRING_TYPES.has(document.documentType)) {
+function calculateDocumentStatus(document: PlainRecord): string {
+  if (NON_EXPIRING_TYPES.has(document.documentType as string)) {
     return 'VALID'
   }
 
@@ -295,7 +309,7 @@ function calculateDocumentStatus(document) {
     return 'MISSING'
   }
 
-  const daysUntilExpiration = Math.ceil((new Date(document.expiresAt).getTime() - Date.now()) / 86_400_000)
+  const daysUntilExpiration = Math.ceil((new Date(document.expiresAt as string).getTime() - Date.now()) / 86_400_000)
 
   if (Number.isNaN(daysUntilExpiration)) {
     return 'MISSING'
@@ -316,7 +330,7 @@ function calculateDocumentStatus(document) {
   return 'VALID'
 }
 
-function normalizeDate(value, errorMessage) {
+function normalizeDate(value: unknown, errorMessage: string): string {
   const rawValue = String(value || '').trim()
   const date = rawValue.length === 10 ? new Date(`${rawValue}T23:59:00.000Z`) : new Date(rawValue)
 
@@ -327,7 +341,7 @@ function normalizeDate(value, errorMessage) {
   return date.toISOString()
 }
 
-function healthStatus(score) {
+function healthStatus(score: number): string {
   if (score >= 85) {
     return 'HEALTHY'
   }
@@ -343,7 +357,7 @@ function healthStatus(score) {
   return 'CRITICAL'
 }
 
-function healthSummary(score, blockingDocuments, warningDocuments) {
+function healthSummary(score: number, blockingDocuments: PlainRecord[], warningDocuments: PlainRecord[]): string {
   if (blockingDocuments.length > 0) {
     return 'Bloqueado para operacion hasta regularizar documentacion obligatoria.'
   }
@@ -355,8 +369,8 @@ function healthSummary(score, blockingDocuments, warningDocuments) {
   return score >= 85 ? 'Documentacion al dia y unidad apta para despacho.' : 'Unidad operativa con riesgos no documentales.'
 }
 
-function documentTypeLabel(documentType) {
-  const labels = {
+function documentTypeLabel(documentType: unknown): string {
+  const labels: Record<string, string> = {
     ADDITIONAL_INSURANCE: 'Seguro adicional',
     CERTIFICATE: 'Certificado',
     CIRCULATION_PERMIT: 'Permiso de circulacion',
@@ -367,11 +381,11 @@ function documentTypeLabel(documentType) {
     TECHNICAL_INSPECTION: 'Revision tecnica',
   }
 
-  return labels[documentType] || 'Documento'
+  return labels[documentType as string] || 'Documento'
 }
 
-function documentStatusLabel(status) {
-  const labels = {
+function documentStatusLabel(status: unknown): string {
+  const labels: Record<string, string> = {
     EXPIRED: 'vencido',
     EXPIRES_SOON_15: 'vence en 15 dias',
     EXPIRES_SOON_30: 'vence en 30 dias',
@@ -379,14 +393,14 @@ function documentStatusLabel(status) {
     VALID: 'vigente',
   }
 
-  return labels[status] || 'sin estado'
+  return labels[status as string] || 'sin estado'
 }
 
-function isDocumentBlocker(value) {
+function isDocumentBlocker(value: unknown): boolean {
   return /document|revision|permiso|seguro|leasing/i.test(String(value || ''))
 }
 
-function mergeNotes(currentNotes, nextNote) {
+function mergeNotes(currentNotes: unknown, nextNote: string): string {
   const notes = String(currentNotes || '').trim()
 
   return notes.includes(nextNote) ? notes : [notes, nextNote].filter(Boolean).join(' ')
