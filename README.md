@@ -44,14 +44,16 @@ Frontend:
 - CSS Modules mas tokens globales en `frontend/src/styles`.
 - Lucide React para iconografia.
 - Electron para preview, pack e instalador Windows.
+- Vitest para pruebas unitarias del frontend.
 
 Backend:
 
-- Node.js con ES Modules y Express 5.
-- SQL Server con `mssql` y soporte `msnodesqlv8`.
+- Node.js con ES Modules, **TypeScript** (strict, NodeNext) y Express 5. Ejecucion con `tsx`, typecheck con `tsc`.
+- SQL Server con `mssql` y soporte `msnodesqlv8` (carga diferida).
 - Repositorio en memoria para demo local.
-- CRUD generico desde `backend/src/config/resources.js`.
+- CRUD generico desde `backend/src/config/resources.ts`.
 - Modulos especializados para flujos como casos, diagnosticos, fletes, compras, comunicaciones, mapas, reportes y neumaticos.
+- Pruebas unitarias con `node:test` (frontend con `vitest`).
 
 ## Instalacion
 
@@ -148,7 +150,7 @@ Variables principales:
 | `npm run preview` | Sirve el build frontend. |
 | `npm run lint` | Ejecuta lint frontend. |
 | `npm run typecheck` | Ejecuta typecheck frontend. |
-| `npm run check` | Ejecuta lint, typecheck y chequeo backend. |
+| `npm run check` | Ejecuta lint, typecheck, tests (frontend + backend) y chequeo backend (incluye `tsc`, tests, seguridad, contrato y smoke). |
 | `npm run backend:dev` | Levanta backend con nodemon. |
 | `npm run backend:start` | Levanta backend en modo start. |
 | `npm run backend:migrate` | Migra SQL Server desde el registry de recursos. |

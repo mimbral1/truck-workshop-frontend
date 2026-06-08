@@ -48,15 +48,16 @@ La plataforma conecta procesos como:
 
 ### Backend
 
-- Node.js con ES Modules.
+- Node.js con ES Modules y **TypeScript** (strict, NodeNext). Ejecucion con `tsx`, typecheck con `tsc`.
 - Express 5.
-- SQL Server via `mssql`.
-- Soporte `msnodesqlv8` para autenticacion Windows.
+- SQL Server via `mssql`. El driver nativo `msnodesqlv8` (autenticacion Windows) se carga de forma diferida.
 - `helmet`, CORS propio y `morgan`.
 - JWT con expiracion configurable.
 - PBKDF2 para hashes de password.
-- CRUD declarativo desde `backend/src/config/resources.js`.
+- CRUD declarativo desde `backend/src/config/resources.ts`.
 - Repositorio SQL Server o repositorio en memoria.
+- Tipos compartidos en `backend/src/shared/types/domain.ts`.
+- Pruebas unitarias con `node:test` (capa de seguridad y datos).
 
 ## 4. Arranque local
 

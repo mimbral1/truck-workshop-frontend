@@ -1,31 +1,35 @@
 # Backend - arquitectura
 
-Actualizado: 2026-05-14
+Actualizado: 2026-06-08
 
-Backend monolitico modular en JavaScript para Truck Workshop. Expone una API Express bajo `/api`, puede trabajar contra SQL Server o contra un repositorio en memoria para demo local, y reutiliza un registry declarativo de recursos para generar CRUD, migraciones, seed y auditoria de base de datos.
+Backend monolitico modular en **TypeScript** para Truck Workshop. Expone una API Express bajo `/api`, puede trabajar contra SQL Server o contra un repositorio en memoria para demo local, y reutiliza un registry declarativo de recursos para generar CRUD, migraciones, seed y auditoria de base de datos.
+
+Todo `src/**` esta en TypeScript (`.ts`). El codigo se ejecuta con `tsx` (dev/scripts) y se valida con `tsc --noEmit`; los `scripts/` de tooling siguen en JS y corren via `tsx`. Los specifiers de import usan extension `.js` por compatibilidad NodeNext (resuelven al `.ts` hermano).
 
 ## Stack
 
-- Node.js con ES Modules.
+- Node.js con ES Modules y **TypeScript** (strict, `module`/`moduleResolution` NodeNext).
+- Ejecucion con `tsx`; typecheck con `tsc`.
 - Express 5.
-- SQL Server con `mssql`.
-- Soporte `msnodesqlv8` para autenticacion Windows.
+- SQL Server con `mssql`. El driver nativo `msnodesqlv8` (autenticacion Windows) se carga de forma diferida.
 - `helmet`, `cors` y `morgan`.
 - Repositorio SQL generico con consultas parametrizadas.
 - Repositorio en memoria para desarrollo sin SQL Server.
-- Migracion propia desde `src/config/resources.js`.
+- Migracion propia desde `src/config/resources.ts`.
 - Seeds generados desde mocks del frontend.
+- Sistema de tipos en `src/shared/types/domain.ts` y augmentacion de Express en `src/types/express.d.ts`.
+- Pruebas unitarias con `node:test` (`npm test`, incluidas en `npm run check`).
 
 ## Arranque
 
 ```text
-src/server.js
+src/server.ts
   crea la app con createApp()
   inicia scheduler de precios de combustible
   escucha en env.port
   cierra scheduler y pool SQL en SIGINT/SIGTERM
 
-src/app.js
+src/app.ts
   registra helmet, CORS, parsers y morgan
   registra requestContext para X-Request-Id
   monta rutas con registerRoutes(app)
