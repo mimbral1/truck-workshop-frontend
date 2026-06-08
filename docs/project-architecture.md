@@ -1,6 +1,6 @@
 # Truck Workshop - documentacion integral del proyecto
 
-Actualizado: 2026-05-14
+Actualizado: 2026-06-08
 
 Este documento es la referencia tecnica amplia del proyecto completo. Resume como se organiza el monorepo, como se conectan frontend y backend, que modulos existen, que rutas y recursos son canonicos, que scripts operan la plataforma y que reglas debe seguir el equipo para mantener el sistema consistente.
 
@@ -27,7 +27,8 @@ La plataforma conecta procesos como:
 | `docker-compose.yml` | SQL Server local. | Contenedor `mcr.microsoft.com/mssql/server:2022-latest`. |
 | `frontend/` | Aplicacion React/Electron. | Vite, TypeScript, React Router, Axios, CSS Modules. |
 | `backend/` | API Express. | Monolito modular con SQL Server o repositorio en memoria. |
-| `docs/` | Documentacion tecnica. | Arquitectura, frontend, backend, calidad y UX. |
+| `api/` | Funcion serverless de Vercel. | `api/[...path].js`: reverse proxy de `/api/*` hacia el backend publico (`BACKEND_URL`). |
+| `docs/` | Documentacion tecnica. | Arquitectura, frontend, backend, calidad, UX y despliegue. |
 | `logs/` | Logs locales persistentes. | No es fuente de producto. |
 | `.runtime-logs/` | Logs temporales. | Regenerables. |
 | `tmp/` | Archivos temporales. | No guardar fuente canonica. |
@@ -781,7 +782,32 @@ Frontend/backend contract OK. 56 frontend endpoints covered by 77 backend routes
 | Algunas rutas secundarias estan ocultas en sidebar. | Intencional. | Mantener `showInSidebar=false` y navegar desde acciones contextuales. |
 | Los docs dependen de cambios de `routes.ts`, `app.config.ts` y `resources.js`. | Manual. | Actualizar docs junto a cambios de arquitectura. |
 
-## 16. Checklist antes de entregar cambios
+## 16. Despliegue
+
+El frontend se publica en Vercel y el backend Express se despliega aparte en una URL publica HTTPS con acceso a SQL Server.
+
+### Proxy serverless
+
+`api/[...path].js` (con copia en `frontend/api/[...path].js`) es una funcion serverless de Vercel que actua como reverse proxy:
+
+- Resuelve el backend desde `BACKEND_URL` o `API_BASE_URL` y normaliza la URL para que termine en `/api`.
+- Reenvia metodo, headers y body al backend, filtrando headers hop-by-hop.
+- Devuelve `502` con mensaje accionable si falta `BACKEND_URL` o el backend no responde.
+
+Asi el navegador siempre llama a `/api` del mismo origen y Vercel hace el salto al backend real, evitando CORS y dependencias de `localhost`.
+
+### Variables en Vercel
+
+```env
+BACKEND_URL=https://URL-PUBLICA-DEL-BACKEND/api
+VITE_ALLOW_MOCK_FALLBACK=false
+```
+
+`VITE_API_BASE_URL` puede omitirse; si falta, el frontend usa `/api`. Los errores del cliente HTTP se normalizan en `frontend/src/shared/services/apiErrorHandler.ts`.
+
+El detalle completo vive en [despliegue en Vercel](deployment-vercel.md).
+
+## 17. Checklist antes de entregar cambios
 
 Cambios frontend:
 

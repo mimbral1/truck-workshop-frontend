@@ -1,6 +1,6 @@
 # Documentacion Truck Workshop
 
-Actualizado: 2026-05-14
+Actualizado: 2026-06-08
 
 Esta carpeta documenta el proyecto completo por capas. La idea es que puedas entrar por el tema que necesitas sin leer un documento gigante.
 
@@ -15,6 +15,7 @@ Esta carpeta documenta el proyecto completo por capas. La idea es que puedas ent
 | Frontend | [Frontend](frontend/README.md) | Arquitectura, rutas, layout, datos, features y mantenimiento. |
 | Calidad | [Calidad](quality/README.md) | Estado tecnico, riesgos, checklist y matriz frontend/backend. |
 | UX | [UX operacional](ux/README.md) | Principios de experiencia operacional y patrones visuales. |
+| Despliegue | [Despliegue en Vercel](deployment-vercel.md) | Proxy serverless `api/[...path].js`, variables y backend publico. |
 
 ## Lectura recomendada por rol
 

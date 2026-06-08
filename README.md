@@ -1,8 +1,8 @@
 # Truck Workshop
 
-Actualizado: 2026-05-14
+Actualizado: 2026-06-08
 
-Truck Workshop es una plataforma operacional para taller, flota, fletes, inventario, compras, comunicaciones, incidencias, reporteria y administracion. El repositorio esta organizado como monorepo: la raiz coordina scripts, `frontend/` contiene la aplicacion React/Electron, `backend/` contiene la API Express y `docs/` contiene la documentacion tecnica.
+Truck Workshop es una plataforma operacional para taller, flota, fletes, inventario, compras, comunicaciones, incidencias, reporteria y administracion. El repositorio esta organizado como monorepo: la raiz coordina scripts, `frontend/` contiene la aplicacion React/Electron, `backend/` contiene la API Express, `api/` contiene el proxy serverless de Vercel y `docs/` contiene la documentacion tecnica.
 
 ## Lectura rapida
 
@@ -10,7 +10,8 @@ Truck Workshop es una plataforma operacional para taller, flota, fletes, inventa
 |---|---|
 | `frontend/` | App React, TypeScript, Vite, React Router, Axios, CSS Modules, Lucide React y empaquetado Electron. |
 | `backend/` | API Node/Express bajo `/api`, SQL Server o repositorio en memoria, CRUD declarativo y modulos con reglas de negocio. |
-| `docs/` | Documentacion separada por backend, frontend, calidad y UX operacional. |
+| `api/` | Funcion serverless `api/[...path].js` que en Vercel reenvia `/api/*` al backend publico (`BACKEND_URL`). |
+| `docs/` | Documentacion separada por backend, frontend, calidad, UX operacional y despliegue. |
 | `logs/` | Salidas locales de procesos de desarrollo. |
 | `.runtime-logs/` | Logs temporales creados por ejecuciones locales. |
 
