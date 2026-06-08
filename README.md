@@ -1,8 +1,8 @@
 # Truck Workshop
 
-Actualizado: 2026-05-14
+Actualizado: 2026-06-08
 
-Truck Workshop es una plataforma operacional para taller, flota, fletes, inventario, compras, comunicaciones, incidencias, reporteria y administracion. El repositorio esta organizado como monorepo: la raiz coordina scripts, `frontend/` contiene la aplicacion React/Electron, `backend/` contiene la API Express y `docs/` contiene la documentacion tecnica.
+Truck Workshop es una plataforma operacional para taller, flota, fletes, inventario, compras, comunicaciones, incidencias, reporteria y administracion. El repositorio esta organizado como monorepo: la raiz coordina scripts, `frontend/` contiene la aplicacion React/Electron, `backend/` contiene la API Express, `api/` contiene el proxy serverless de Vercel y `docs/` contiene la documentacion tecnica.
 
 ## Lectura rapida
 
@@ -10,7 +10,8 @@ Truck Workshop es una plataforma operacional para taller, flota, fletes, inventa
 |---|---|
 | `frontend/` | App React, TypeScript, Vite, React Router, Axios, CSS Modules, Lucide React y empaquetado Electron. |
 | `backend/` | API Node/Express bajo `/api`, SQL Server o repositorio en memoria, CRUD declarativo y modulos con reglas de negocio. |
-| `docs/` | Documentacion separada por backend, frontend, calidad y UX operacional. |
+| `api/` | Funcion serverless `api/[...path].js` que en Vercel reenvia `/api/*` al backend publico (`BACKEND_URL`). |
+| `docs/` | Documentacion separada por backend, frontend, calidad, UX operacional y despliegue. |
 | `logs/` | Salidas locales de procesos de desarrollo. |
 | `.runtime-logs/` | Logs temporales creados por ejecuciones locales. |
 
@@ -43,14 +44,16 @@ Frontend:
 - CSS Modules mas tokens globales en `frontend/src/styles`.
 - Lucide React para iconografia.
 - Electron para preview, pack e instalador Windows.
+- Vitest para pruebas unitarias del frontend.
 
 Backend:
 
-- Node.js con ES Modules y Express 5.
-- SQL Server con `mssql` y soporte `msnodesqlv8`.
+- Node.js con ES Modules, **TypeScript** (strict, NodeNext) y Express 5. Ejecucion con `tsx`, typecheck con `tsc`.
+- SQL Server con `mssql` y soporte `msnodesqlv8` (carga diferida).
 - Repositorio en memoria para demo local.
-- CRUD generico desde `backend/src/config/resources.js`.
+- CRUD generico desde `backend/src/config/resources.ts`.
 - Modulos especializados para flujos como casos, diagnosticos, fletes, compras, comunicaciones, mapas, reportes y neumaticos.
+- Pruebas unitarias con `node:test` (frontend con `vitest`).
 
 ## Instalacion
 
@@ -147,7 +150,7 @@ Variables principales:
 | `npm run preview` | Sirve el build frontend. |
 | `npm run lint` | Ejecuta lint frontend. |
 | `npm run typecheck` | Ejecuta typecheck frontend. |
-| `npm run check` | Ejecuta lint, typecheck y chequeo backend. |
+| `npm run check` | Ejecuta lint, typecheck, tests (frontend + backend) y chequeo backend (incluye `tsc`, tests, seguridad, contrato y smoke). |
 | `npm run backend:dev` | Levanta backend con nodemon. |
 | `npm run backend:start` | Levanta backend en modo start. |
 | `npm run backend:migrate` | Migra SQL Server desde el registry de recursos. |

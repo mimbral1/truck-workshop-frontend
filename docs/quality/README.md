@@ -1,11 +1,12 @@
 # Calidad Frontend/Backend
 
-Actualizado: 2026-05-14
+Actualizado: 2026-06-08
 
 Revision tecnica del proyecto separada por capa.
 
 | Documento | Para que sirve |
 |---|---|
+| [Revision full-stack y migracion a TypeScript](full-stack-review.md) | Informe integral: diagnostico, mapa de integracion, hallazgos por severidad, tests, score y recomendaciones. |
 | [Resumen](overview.md) | Objetivo, estado actual y mejoras ya documentadas/aplicadas. |
 | [Calidad frontend](frontend.md) | Patrones existentes, riesgos y reglas para frontend. |
 | [Calidad backend](backend.md) | Patrones existentes, riesgos y reglas para backend. |

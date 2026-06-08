@@ -1,6 +1,6 @@
 # Truck Workshop - mapa general del proyecto
 
-Actualizado: 2026-05-14
+Actualizado: 2026-06-08
 
 Este documento es la puerta de entrada tecnica al monorepo. Resume que hay en cada carpeta, como se conectan frontend y backend, y que archivos se deben tocar cuando aparece un modulo nuevo o cambia un flujo de negocio.
 
@@ -15,6 +15,7 @@ Para la lectura mas completa del sistema, revisar tambien [documentacion integra
 | `docker-compose.yml` | SQL Server Developer local. | Usado por `npm run db:up` y `npm run db:down`. |
 | `frontend/` | Aplicacion React, Vite, TypeScript y Electron. | Contiene rutas, features, mocks, UI compartida y build desktop. |
 | `backend/` | API Express, SQL Server/memory, CRUD declarativo y modulos especializados. | Expone `/api`. |
+| `api/` | Funcion serverless de Vercel `api/[...path].js`. | Reverse proxy que reenvia `/api/*` al backend publico segun `BACKEND_URL`. Ver [despliegue en Vercel](deployment-vercel.md). |
 | `docs/` | Documentacion tecnica por area. | Este indice se mantiene como referencia del equipo. |
 | `logs/` | Logs locales persistentes. | No forma parte del producto. |
 | `.runtime-logs/` | Logs temporales de ejecuciones. | Puede regenerarse localmente. |
