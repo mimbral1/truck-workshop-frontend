@@ -1,9 +1,10 @@
+import type { NextFunction, Request, Response } from 'express'
 import { env } from '../../config/env.js'
 import { AppError } from '../errors/app-error.js'
 import { verifyJwt } from '../security/jwt.js'
 import { hasPermission, requiredPermissionForRequest } from '../security/permission-rules.js'
 
-export function authenticateRequest(request, response, next) {
+export function authenticateRequest(request: Request, response: Response, next: NextFunction): void {
   const token = getBearerToken(request)
 
   if (!token) {
@@ -33,7 +34,7 @@ export function authenticateRequest(request, response, next) {
   }
 }
 
-export function authorizeRequest(request, response, next) {
+export function authorizeRequest(request: Request, _response: Response, next: NextFunction): void {
   if (!env.auth.enforcePermissions) {
     next()
     return
@@ -49,7 +50,7 @@ export function authorizeRequest(request, response, next) {
   next(new AppError('No tienes permisos para ejecutar esta accion', 403, { permission }))
 }
 
-function getBearerToken(request) {
+function getBearerToken(request: Request): string {
   const authorization = String(request.headers.authorization || '').trim()
   const [scheme, token] = authorization.split(/\s+/)
 

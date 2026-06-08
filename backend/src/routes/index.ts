@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, type Express, type Request, type Response } from 'express'
 import { allCrudResources, assignmentResource, workshopCaseResource } from '../config/resources.js'
 import { authRouter } from '../modules/auth/auth.routes.js'
 import { approvalRouter } from '../modules/approvals/approval.routes.js'
@@ -30,8 +30,9 @@ import { createCrudRouter } from '../shared/http/crud-router.js'
 import { env } from '../config/env.js'
 import { authenticateRequest, authorizeRequest } from '../shared/middleware/authentication.js'
 import { sendResponse } from '../shared/http/send-response.js'
+import type { ResourceDefinition } from '../shared/types/domain.js'
 
-const resourceRouteAliases = {
+const resourceRouteAliases: Record<string, string[]> = {
   'diagnostic-checklists': ['/checklists'],
   'fuel-records': ['/fuel'],
   'labor-tasks': ['/labor'],
@@ -42,10 +43,10 @@ const resourceRouteAliases = {
   'truck-health-scores': ['/fleet/health-score'],
 }
 
-export function registerRoutes(app) {
+export function registerRoutes(app: Express): void {
   const api = Router()
 
-  api.get('/health', (request, response) => {
+  api.get('/health', (_request: Request, response: Response) => {
     sendResponse(response, { data: { service: 'truck-workshop-api', status: 'ok' } })
   })
 
@@ -85,8 +86,13 @@ export function registerRoutes(app) {
   app.use(env.apiPrefix, api)
 }
 
-function mountCrudResources(api) {
-  const resourceRouters = allCrudResources
+interface ResourceRouter {
+  resource: ResourceDefinition
+  router: Router
+}
+
+function mountCrudResources(api: Router): void {
+  const resourceRouters: ResourceRouter[] = allCrudResources
     .filter((resource) => resource.name !== workshopCaseResource.name && resource.name !== assignmentResource.name)
     .map((resource) => ({
       resource,
@@ -113,6 +119,6 @@ function mountCrudResources(api) {
   })
 }
 
-function routeSpecificity(route) {
+function routeSpecificity(route: string): number {
   return route.split('/').filter(Boolean).length
 }

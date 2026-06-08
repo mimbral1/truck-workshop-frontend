@@ -1,8 +1,10 @@
+import type { Request } from 'express'
+
 const ACTOR_HEADER = 'x-user-name'
 
-export function getActorName(request, fallbackFields = []) {
+export function getActorName(request: Request, fallbackFields: string[] = []): string {
   if (hasValue(request.user?.name)) {
-    return String(request.user.name)
+    return String(request.user?.name)
   }
 
   const headerValue = request.get?.(ACTOR_HEADER) || request.headers?.[ACTOR_HEADER]
@@ -11,8 +13,10 @@ export function getActorName(request, fallbackFields = []) {
     return String(headerValue)
   }
 
+  const body = (request.body ?? {}) as Record<string, unknown>
+
   for (const field of fallbackFields) {
-    const payloadValue = request.body?.[field]
+    const payloadValue = body[field]
 
     if (hasValue(payloadValue)) {
       return String(payloadValue)
@@ -22,6 +26,6 @@ export function getActorName(request, fallbackFields = []) {
   return 'Sistema'
 }
 
-function hasValue(value) {
+function hasValue(value: unknown): boolean {
   return value !== undefined && value !== null && String(value).trim() !== ''
 }

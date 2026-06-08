@@ -1,11 +1,26 @@
 import { randomUUID } from 'node:crypto'
+import type { Request as SqlRequest } from 'mssql'
 import { getPool, sql } from '../../db/pool.js'
 import { AppError } from '../errors/app-error.js'
 import { toSnakeCase } from '../utils/case-converters.js'
 import { buildPaginationMeta, parsePaginationOptions, parseSortOrder } from './query-options.js'
+import type {
+  ListQuery,
+  NormalizedResource,
+  PaginatedResult,
+  PlainRecord,
+  ResourceDefinition,
+  ResourceRepositoryContract,
+} from '../types/domain.js'
 
-export class ResourceRepository {
-  constructor(resource) {
+type DbRow = Record<string, unknown>
+
+export class ResourceRepository implements ResourceRepositoryContract {
+  readonly resource: NormalizedResource
+  private readonly jsonFields: Set<string>
+  readonly fields: string[]
+
+  constructor(resource: ResourceDefinition) {
     this.resource = {
       defaultSort: 'createdAt',
       filterFields: [],
@@ -18,7 +33,7 @@ export class ResourceRepository {
     this.fields = this.resource.fields
   }
 
-  async findAll(query = {}) {
+  async findAll(query: ListQuery = {}): Promise<PaginatedResult> {
     const { limit, offset, page } = parsePaginationOptions(query)
     const sortField = this.safeSortField(query.sort)
     const sortOrder = parseSortOrder(query.order).toUpperCase()
@@ -37,7 +52,7 @@ export class ResourceRepository {
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
     `
     const [dataResult, countResult] = await Promise.all([
-      request.query(dataQuery),
+      request.query<DbRow>(dataQuery),
       this.count(query),
     ])
 
@@ -47,11 +62,11 @@ export class ResourceRepository {
     }
   }
 
-  async findById(id) {
+  async findById(id: string): Promise<PlainRecord | null> {
     const request = (await getPool()).request()
     request.input('id', sql.NVarChar(80), id)
 
-    const result = await request.query(`
+    const result = await request.query<DbRow>(`
       SELECT ${this.selectColumns()}
       FROM ${this.tableName()}
       WHERE ${this.columnName('id')} = @id AND deleted_at IS NULL;
@@ -62,11 +77,11 @@ export class ResourceRepository {
     return record ? this.fromDb(record) : null
   }
 
-  async existsById(id) {
+  async existsById(id: string): Promise<boolean> {
     const request = (await getPool()).request()
     request.input('id', sql.NVarChar(80), id)
 
-    const result = await request.query(`
+    const result = await request.query<{ total: number }>(`
       SELECT COUNT(1) AS total
       FROM ${this.tableName()}
       WHERE ${this.columnName('id')} = @id;
@@ -75,9 +90,9 @@ export class ResourceRepository {
     return Number(result.recordset[0]?.total || 0) > 0
   }
 
-  async create(payload) {
+  async create(payload: PlainRecord): Promise<PlainRecord | null> {
     const now = new Date().toISOString()
-    const record = {
+    const record: PlainRecord = {
       ...payload,
       id: payload.id || randomUUID(),
     }
@@ -102,17 +117,17 @@ export class ResourceRepository {
       VALUES (${columns.map((field) => `@${field}`).join(', ')});
     `)
 
-    return this.findById(record.id)
+    return this.findById(String(record.id))
   }
 
-  async update(id, payload) {
+  async update(id: string, payload: PlainRecord): Promise<PlainRecord | null> {
     const current = await this.findById(id)
 
     if (!current) {
       throw new AppError(`${this.resource.name} no encontrado`, 404)
     }
 
-    const updatePayload = { ...payload }
+    const updatePayload: PlainRecord = { ...payload }
 
     if (this.fields.includes('updatedAt')) {
       updatePayload.updatedAt = new Date().toISOString()
@@ -142,8 +157,8 @@ export class ResourceRepository {
     return this.findById(id)
   }
 
-  async updateAny(id, payload) {
-    const updatePayload = { ...payload }
+  async updateAny(id: string, payload: PlainRecord): Promise<PlainRecord | null> {
+    const updatePayload: PlainRecord = { ...payload }
 
     if (this.fields.includes('updatedAt')) {
       updatePayload.updatedAt = updatePayload.updatedAt || new Date().toISOString()
@@ -174,7 +189,7 @@ export class ResourceRepository {
     return this.findById(id)
   }
 
-  async remove(id) {
+  async remove(id: string): Promise<PlainRecord> {
     const current = await this.findById(id)
 
     if (!current) {
@@ -193,18 +208,18 @@ export class ResourceRepository {
     return current
   }
 
-  async upsertMany(records) {
-    const saved = []
+  async upsertMany(records: PlainRecord[]): Promise<Array<PlainRecord | null>> {
+    const saved: Array<PlainRecord | null> = []
 
     for (const record of records) {
-      const exists = record.id ? await this.existsById(record.id) : false
-      saved.push(exists ? await this.updateAny(record.id, record) : await this.create(record))
+      const exists = record.id ? await this.existsById(String(record.id)) : false
+      saved.push(exists ? await this.updateAny(String(record.id), record) : await this.create(record))
     }
 
     return saved
   }
 
-  async countBy(filters = {}) {
+  async countBy(filters: Record<string, unknown> = {}): Promise<number> {
     const request = (await getPool()).request()
     const clauses = ['deleted_at IS NULL']
 
@@ -217,7 +232,7 @@ export class ResourceRepository {
       clauses.push(`${this.columnName(field)} = @${field}`)
     })
 
-    const result = await request.query(`
+    const result = await request.query<{ total: number }>(`
       SELECT COUNT(1) AS total
       FROM ${this.tableName()}
       WHERE ${clauses.join(' AND ')};
@@ -226,11 +241,11 @@ export class ResourceRepository {
     return Number(result.recordset[0]?.total || 0)
   }
 
-  async count(query) {
+  async count(query: ListQuery): Promise<number> {
     const request = (await getPool()).request()
     const where = this.buildWhereClause(request, query)
 
-    const result = await request.query(`
+    const result = await request.query<{ total: number }>(`
       SELECT COUNT(1) AS total
       FROM ${this.tableName()}
       ${where.sql};
@@ -239,7 +254,7 @@ export class ResourceRepository {
     return Number(result.recordset[0]?.total || 0)
   }
 
-  buildWhereClause(request, query) {
+  private buildWhereClause(request: SqlRequest, query: ListQuery): { sql: string } {
     const clauses = ['deleted_at IS NULL']
     const search = String(query.search || query.query || '').trim()
 
@@ -262,7 +277,7 @@ export class ResourceRepository {
     return { sql: `WHERE ${clauses.join(' AND ')}` }
   }
 
-  bindInput(request, field, value) {
+  private bindInput(request: SqlRequest, field: string, value: unknown): void {
     const preparedValue = this.jsonFields.has(field) && value !== null && value !== undefined
       ? JSON.stringify(value)
       : value
@@ -275,8 +290,8 @@ export class ResourceRepository {
     request.input(field, preparedValue)
   }
 
-  fromDb(row) {
-    const record = {}
+  private fromDb(row: DbRow): PlainRecord {
+    const record: PlainRecord = {}
 
     for (const field of this.fields) {
       const value = row[field]
@@ -292,11 +307,11 @@ export class ResourceRepository {
     return record
   }
 
-  writableFields() {
+  private writableFields(): string[] {
     return this.fields
   }
 
-  safeSortField(field) {
+  private safeSortField(field: string | undefined): string {
     const allowed = new Set([...this.resource.sortFields, ...this.fields])
 
     if (field && allowed.has(field)) {
@@ -310,22 +325,22 @@ export class ResourceRepository {
     return 'id'
   }
 
-  selectColumns(alias) {
+  private selectColumns(alias?: string): string {
     return this.fields
       .map((field) => `${alias ? `${alias}.` : ''}${this.columnName(field)} AS [${field}]`)
       .join(', ')
   }
 
-  tableName() {
+  private tableName(): string {
     return `[dbo].[${this.resource.table}]`
   }
 
-  columnName(field) {
+  private columnName(field: string): string {
     return `[${this.resource.fieldMap?.[field] || toSnakeCase(field)}]`
   }
 }
 
-function parseJson(value) {
+function parseJson(value: unknown): unknown {
   if (value === null || value === undefined || value === '') {
     return []
   }

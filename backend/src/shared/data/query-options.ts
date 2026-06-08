@@ -1,7 +1,15 @@
+import type { ListQuery, PaginationMeta } from '../types/domain.js'
+
 export const DEFAULT_PAGE_SIZE = 25
 export const MAX_PAGE_SIZE = 100
 
-export function parsePaginationOptions(query = {}) {
+export interface PaginationOptions {
+  page: number
+  limit: number
+  offset: number
+}
+
+export function parsePaginationOptions(query: ListQuery = {}): PaginationOptions {
   const page = clampInteger(query.page, { fallback: 1, max: Number.MAX_SAFE_INTEGER, min: 1 })
   const limit = clampInteger(query.limit, { fallback: DEFAULT_PAGE_SIZE, max: MAX_PAGE_SIZE, min: 1 })
 
@@ -12,11 +20,11 @@ export function parsePaginationOptions(query = {}) {
   }
 }
 
-export function parseSortOrder(order) {
+export function parseSortOrder(order: unknown): 'asc' | 'desc' {
   return String(order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc'
 }
 
-export function buildPaginationMeta({ limit, page, total }) {
+export function buildPaginationMeta({ limit, page, total }: { limit: number; page: number; total: number }): PaginationMeta {
   return {
     limit,
     page,
@@ -25,7 +33,7 @@ export function buildPaginationMeta({ limit, page, total }) {
   }
 }
 
-export function compareValues(first, second) {
+export function compareValues(first: unknown, second: unknown): number {
   if (first === second) {
     return 0
   }
@@ -41,7 +49,13 @@ export function compareValues(first, second) {
   return first > second ? 1 : -1
 }
 
-function clampInteger(value, { fallback, max, min }) {
+interface ClampBounds {
+  fallback: number
+  max: number
+  min: number
+}
+
+function clampInteger(value: unknown, { fallback, max, min }: ClampBounds): number {
   const parsed = Number(value)
 
   if (!Number.isFinite(parsed)) {

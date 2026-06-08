@@ -2,14 +2,28 @@ import { randomUUID } from 'node:crypto'
 import { seedRecordsByResource } from '../../../scripts/seed-data.js'
 import { AppError } from '../errors/app-error.js'
 import { buildPaginationMeta, compareValues, parsePaginationOptions, parseSortOrder } from './query-options.js'
+import type {
+  ListQuery,
+  NormalizedResource,
+  PaginatedResult,
+  PlainRecord,
+  ResourceDefinition,
+  ResourceRepositoryContract,
+} from '../types/domain.js'
 
-const stores = new Map()
+const stores = new Map<string, Map<string, PlainRecord>>()
+const seedRecords = seedRecordsByResource as Record<string, PlainRecord[]>
 
-export class MemoryResourceRepository {
-  constructor(resource) {
+export class MemoryResourceRepository implements ResourceRepositoryContract {
+  readonly resource: NormalizedResource
+  readonly fields: string[]
+  private readonly store: Map<string, PlainRecord>
+
+  constructor(resource: ResourceDefinition) {
     this.resource = {
       defaultSort: 'createdAt',
       filterFields: [],
+      jsonFields: [],
       searchableFields: [],
       sortFields: [],
       ...resource,
@@ -18,7 +32,7 @@ export class MemoryResourceRepository {
     this.store = ensureStore(this.resource)
   }
 
-  async findAll(query = {}) {
+  async findAll(query: ListQuery = {}): Promise<PaginatedResult> {
     const { limit, offset, page } = parsePaginationOptions(query)
     const sortField = this.safeSortField(query.sort)
     const sortOrder = parseSortOrder(query.order) === 'asc' ? 1 : -1
@@ -33,11 +47,11 @@ export class MemoryResourceRepository {
     }
   }
 
-  async findById(id) {
+  async findById(id: string): Promise<PlainRecord | null> {
     return this.clone(this.store.get(id)) || null
   }
 
-  async create(payload) {
+  async create(payload: PlainRecord): Promise<PlainRecord> {
     const now = new Date().toISOString()
     const record = this.pickWritableFields({
       ...payload,
@@ -52,12 +66,12 @@ export class MemoryResourceRepository {
       record.updatedAt = now
     }
 
-    this.store.set(record.id, record)
+    this.store.set(String(record.id), record)
 
     return this.clone(record)
   }
 
-  async update(id, payload) {
+  async update(id: string, payload: PlainRecord): Promise<PlainRecord> {
     const current = this.store.get(id)
 
     if (!current) {
@@ -76,7 +90,7 @@ export class MemoryResourceRepository {
     return this.clone(record)
   }
 
-  async remove(id) {
+  async remove(id: string): Promise<PlainRecord> {
     const current = this.store.get(id)
 
     if (!current) {
@@ -88,17 +102,17 @@ export class MemoryResourceRepository {
     return this.clone(current)
   }
 
-  async upsertMany(records) {
-    const saved = []
+  async upsertMany(records: PlainRecord[]): Promise<PlainRecord[]> {
+    const saved: PlainRecord[] = []
 
     for (const record of records) {
-      saved.push(record.id && this.store.has(record.id) ? await this.update(record.id, record) : await this.create(record))
+      saved.push(record.id && this.store.has(String(record.id)) ? await this.update(String(record.id), record) : await this.create(record))
     }
 
     return saved
   }
 
-  async countBy(filters = {}) {
+  async countBy(filters: Record<string, unknown> = {}): Promise<number> {
     return this.records().filter((record) =>
       Object.entries(filters).every(([field, value]) => {
         if (value === undefined || value === null || value === '') {
@@ -110,7 +124,7 @@ export class MemoryResourceRepository {
     ).length
   }
 
-  matchesSearch(record, query) {
+  private matchesSearch(record: PlainRecord, query: ListQuery): boolean {
     const search = String(query.search || query.query || '').trim().toLowerCase()
 
     if (!search || this.resource.searchableFields.length === 0) {
@@ -120,7 +134,7 @@ export class MemoryResourceRepository {
     return this.resource.searchableFields.some((field) => String(record[field] || '').toLowerCase().includes(search))
   }
 
-  matchesFilters(record, query) {
+  private matchesFilters(record: PlainRecord, query: ListQuery): boolean {
     return this.resource.filterFields.every((field) => {
       const value = query[field]
 
@@ -132,8 +146,8 @@ export class MemoryResourceRepository {
     })
   }
 
-  pickWritableFields(payload) {
-    return this.fields.reduce((record, field) => {
+  private pickWritableFields(payload: PlainRecord): PlainRecord {
+    return this.fields.reduce<PlainRecord>((record, field) => {
       if (payload[field] !== undefined) {
         record[field] = payload[field]
       }
@@ -142,7 +156,7 @@ export class MemoryResourceRepository {
     }, {})
   }
 
-  safeSortField(field) {
+  private safeSortField(field: string | undefined): string {
     const allowed = new Set([...this.resource.sortFields, ...this.fields])
 
     if (field && allowed.has(field)) {
@@ -152,22 +166,22 @@ export class MemoryResourceRepository {
     return this.fields.includes(this.resource.defaultSort) ? this.resource.defaultSort : 'id'
   }
 
-  records() {
+  private records(): PlainRecord[] {
     return [...this.store.values()].map((record) => this.clone(record))
   }
 
-  clone(record) {
+  private clone<T>(record: T): T {
     return record ? structuredClone(record) : record
   }
 }
 
-function ensureStore(resource) {
+function ensureStore(resource: NormalizedResource): Map<string, PlainRecord> {
   if (!stores.has(resource.name)) {
     stores.set(
       resource.name,
-      new Map((seedRecordsByResource[resource.name] || []).map((record) => [record.id, structuredClone(record)])),
+      new Map((seedRecords[resource.name] || []).map((record) => [String(record.id), structuredClone(record)])),
     )
   }
 
-  return stores.get(resource.name)
+  return stores.get(resource.name) as Map<string, PlainRecord>
 }

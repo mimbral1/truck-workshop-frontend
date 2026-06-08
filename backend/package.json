@@ -3,18 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Backend monolitico JavaScript para Truck Workshop con SQL Server.",
+  "description": "Backend monolitico modular TypeScript para Truck Workshop con SQL Server.",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "migrate": "node scripts/migrate.js",
-    "seed": "node scripts/seed.js",
-    "seed:generate": "node scripts/generate-seed-data.js",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx scripts/migrate.js",
+    "seed": "tsx scripts/seed.js",
+    "seed:generate": "tsx scripts/generate-seed-data.js",
     "seed:from-mocks": "npm run seed:generate && npm run seed",
     "db:reset": "npm run migrate && npm run seed:from-mocks",
-    "check": "node scripts/check-syntax.js && node scripts/check-security.js && node scripts/audit-frontend-contract.js && node scripts/smoke-api.js",
-    "smoke": "node scripts/smoke-api.js",
-    "db:audit": "node scripts/audit-database.js"
+    "check": "tsc --noEmit && tsx scripts/check-security.js && tsx scripts/audit-frontend-contract.js && tsx scripts/smoke-api.js",
+    "smoke": "tsx scripts/smoke-api.js",
+    "db:audit": "tsx scripts/audit-database.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -29,7 +31,15 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/morgan": "^1.9.10",
+    "@types/mssql": "^12.3.0",
+    "@types/node": "^22.19.20",
+    "@types/uuid": "^10.0.0",
     "esbuild": "^0.25.12",
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.11",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
   }
 }

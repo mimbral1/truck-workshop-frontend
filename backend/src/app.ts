@@ -1,4 +1,4 @@
-import express from 'express'
+import express, { type Express, type NextFunction, type Request, type Response } from 'express'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import { env } from './config/env.js'
@@ -8,7 +8,7 @@ import { errorHandler } from './shared/middleware/error-handler.js'
 import { notFoundHandler } from './shared/middleware/not-found-handler.js'
 import { requestContext } from './shared/middleware/request-context.js'
 
-export function createApp() {
+export function createApp(): Express {
   const app = express()
 
   app.disable('x-powered-by')
@@ -29,7 +29,7 @@ export function createApp() {
   return app
 }
 
-function corsMiddleware(request, response, next) {
+function corsMiddleware(request: Request, response: Response, next: NextFunction): void {
   const origin = request.headers.origin
 
   if (!origin) {
@@ -59,6 +59,6 @@ function corsMiddleware(request, response, next) {
   next()
 }
 
-function isCorsOriginAllowed(origin) {
+function isCorsOriginAllowed(origin: string): boolean {
   return env.nodeEnv !== 'production' || env.corsOrigins.includes(origin)
 }

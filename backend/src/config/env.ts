@@ -7,7 +7,7 @@ const configDir = dirname(fileURLToPath(import.meta.url))
 config({ path: resolve(configDir, '../../../.env'), quiet: true })
 config({ path: resolve(configDir, '../../.env'), quiet: true })
 
-function parseBoolean(value, fallback) {
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) {
     return fallback
   }
@@ -15,7 +15,7 @@ function parseBoolean(value, fallback) {
   return ['true', '1', 'yes', 'y'].includes(String(value).toLowerCase())
 }
 
-function parseList(value, fallback) {
+function parseList(value: string | undefined, fallback: string[]): string[] {
   if (!value) {
     return fallback
   }
@@ -26,13 +26,13 @@ function parseList(value, fallback) {
     .filter(Boolean)
 }
 
-function parseNumber(value, fallback) {
+function parseNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value)
 
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-function parseDurationSeconds(value, fallback) {
+function parseDurationSeconds(value: string | undefined, fallback: number): number {
   if (!value) {
     return fallback
   }
@@ -50,13 +50,29 @@ function parseDurationSeconds(value, fallback) {
   return amount * multiplier
 }
 
-function buildSqlConfig() {
+/** Configuracion de conexion a SQL Server. Las llaves varian segun el tipo de autenticacion. */
+export interface SqlConfig {
+  server: string
+  database: string
+  options: Record<string, unknown>
+  pool: { idleTimeoutMillis: number; max: number; min: number }
+  port?: number
+  driver?: string
+  user?: string
+  password?: string
+  authentication?: {
+    type: string
+    options: { domain: string; password: string; userName: string }
+  }
+}
+
+function buildSqlConfig(): SqlConfig {
   const authType = String(process.env.SQL_AUTH_TYPE || 'sql').toLowerCase()
-  const options = {
+  const options: Record<string, unknown> = {
     encrypt: parseBoolean(process.env.SQL_ENCRYPT, false),
     trustServerCertificate: parseBoolean(process.env.SQL_TRUST_SERVER_CERTIFICATE, true),
   }
-  const baseConfig = {
+  const baseConfig: SqlConfig = {
     database: process.env.SQL_DATABASE || 'TruckWorkshop',
     options,
     pool: {
@@ -166,4 +182,4 @@ export const env = {
   nodeEnv,
   port: Number(process.env.PORT || 4000),
   sql: buildSqlConfig(),
-}
+} as const

@@ -11,7 +11,7 @@ const server = app.listen(env.port, () => {
   console.log(`Truck Workshop API listening on http://localhost:${env.port}${env.apiPrefix}`)
 })
 
-async function shutdown(signal) {
+async function shutdown(signal: string): Promise<void> {
   if (isShuttingDown) {
     return
   }
@@ -21,7 +21,7 @@ async function shutdown(signal) {
   stopFuelPriceScheduler()
 
   try {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => {
         if (error) {
           reject(error)

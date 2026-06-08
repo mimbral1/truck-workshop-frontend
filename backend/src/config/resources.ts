@@ -1,6 +1,18 @@
+import type { ResourceDefinition } from '../shared/types/domain.js'
+
 const commonTimestamps = ['createdAt', 'updatedAt']
 
-export const resources = [
+function findResource(name: string): ResourceDefinition {
+  const resource = resources.find((item) => item.name === name)
+
+  if (!resource) {
+    throw new Error(`Resource ${name} no configurado`)
+  }
+
+  return resource
+}
+
+export const resources: ResourceDefinition[] = [
   {
     name: 'approvals',
     route: '/approvals',
@@ -973,40 +985,40 @@ export const resources = [
   },
 ]
 
-export const scheduleEventResource = resources.find((resource) => resource.name === 'schedule-events')
-export const approvalResource = resources.find((resource) => resource.name === 'approvals')
-export const diagnosticResource = resources.find((resource) => resource.name === 'diagnostics')
-export const customerResource = resources.find((resource) => resource.name === 'customers')
-export const driverResource = resources.find((resource) => resource.name === 'drivers')
-export const fleetAvailabilityResource = resources.find((resource) => resource.name === 'fleet-availability')
-export const fleetTruckResource = resources.find((resource) => resource.name === 'fleet-trucks')
-export const freightAssignmentResource = resources.find((resource) => resource.name === 'freight-assignments')
-export const driverTripSheetResource = resources.find((resource) => resource.name === 'driver-trip-sheets')
-export const freightQuoteResource = resources.find((resource) => resource.name === 'freight-quotes')
-export const fuelPriceSnapshotResource = resources.find((resource) => resource.name === 'fuel-price-snapshots')
-export const freightPricingSettingsResource = resources.find((resource) => resource.name === 'freight-pricing-settings')
-export const freightRequestResource = resources.find((resource) => resource.name === 'freight-requests')
-export const partResource = resources.find((resource) => resource.name === 'parts')
-export const purchaseOrderResource = resources.find((resource) => resource.name === 'purchase-orders')
-export const quoteResource = resources.find((resource) => resource.name === 'quotes')
-export const repairSolutionResource = resources.find((resource) => resource.name === 'repair-solutions')
-export const supplierResource = resources.find((resource) => resource.name === 'suppliers')
-export const truckResource = resources.find((resource) => resource.name === 'trucks')
-export const truckDocumentResource = resources.find((resource) => resource.name === 'truck-documents')
-export const truckHealthScoreResource = resources.find((resource) => resource.name === 'truck-health-scores')
-export const truckTimelineEventResource = resources.find((resource) => resource.name === 'truck-timeline-events')
-export const tireLifecycleResource = resources.find((resource) => resource.name === 'tire-lifecycles')
-export const truckCostResource = resources.find((resource) => resource.name === 'truck-costs')
-export const waitingQueueResource = resources.find((resource) => resource.name === 'waiting-queue')
-export const warehouseLocationResource = resources.find((resource) => resource.name === 'warehouse-locations')
-export const workshopBayResource = resources.find((resource) => resource.name === 'workshop-bays')
-export const mechanicResource = resources.find((resource) => resource.name === 'mechanics')
-export const mechanicSpecialtyResource = resources.find((resource) => resource.name === 'mechanic-specialties')
-export const roleResource = resources.find((resource) => resource.name === 'roles')
-export const shortcutPreferenceResource = resources.find((resource) => resource.name === 'shortcut-preferences')
-export const userRoleAssignmentResource = resources.find((resource) => resource.name === 'user-role-assignments')
+export const scheduleEventResource = findResource('schedule-events')
+export const approvalResource = findResource('approvals')
+export const diagnosticResource = findResource('diagnostics')
+export const customerResource = findResource('customers')
+export const driverResource = findResource('drivers')
+export const fleetAvailabilityResource = findResource('fleet-availability')
+export const fleetTruckResource = findResource('fleet-trucks')
+export const freightAssignmentResource = findResource('freight-assignments')
+export const driverTripSheetResource = findResource('driver-trip-sheets')
+export const freightQuoteResource = findResource('freight-quotes')
+export const fuelPriceSnapshotResource = findResource('fuel-price-snapshots')
+export const freightPricingSettingsResource = findResource('freight-pricing-settings')
+export const freightRequestResource = findResource('freight-requests')
+export const partResource = findResource('parts')
+export const purchaseOrderResource = findResource('purchase-orders')
+export const quoteResource = findResource('quotes')
+export const repairSolutionResource = findResource('repair-solutions')
+export const supplierResource = findResource('suppliers')
+export const truckResource = findResource('trucks')
+export const truckDocumentResource = findResource('truck-documents')
+export const truckHealthScoreResource = findResource('truck-health-scores')
+export const truckTimelineEventResource = findResource('truck-timeline-events')
+export const tireLifecycleResource = findResource('tire-lifecycles')
+export const truckCostResource = findResource('truck-costs')
+export const waitingQueueResource = findResource('waiting-queue')
+export const warehouseLocationResource = findResource('warehouse-locations')
+export const workshopBayResource = findResource('workshop-bays')
+export const mechanicResource = findResource('mechanics')
+export const mechanicSpecialtyResource = findResource('mechanic-specialties')
+export const roleResource = findResource('roles')
+export const shortcutPreferenceResource = findResource('shortcut-preferences')
+export const userRoleAssignmentResource = findResource('user-role-assignments')
 
-export const workshopCaseResource = {
+export const workshopCaseResource: ResourceDefinition = {
   name: 'workshop-cases',
   route: '/workshop-cases',
   table: 'workshop_cases',
@@ -1079,7 +1091,7 @@ export const workshopCaseResource = {
   sortFields: ['createdAt', 'updatedAt', 'slaDueAt', 'estimatedDeliveryAt', 'estimatedCost', 'priority', 'closedAt'],
 }
 
-export const assignmentResource = {
+export const assignmentResource: ResourceDefinition = {
   name: 'assignments',
   route: '/assignments',
   table: 'assignments',
@@ -1089,7 +1101,7 @@ export const assignmentResource = {
   sortFields: ['assignedAt', 'createdAt'],
 }
 
-export const escalationEventResource = {
+export const escalationEventResource: ResourceDefinition = {
   name: 'escalation-events',
   route: '/escalations',
   table: 'escalation_events',

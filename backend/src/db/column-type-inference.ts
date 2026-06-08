@@ -1,3 +1,5 @@
+import type { ResourceDefinition } from '../shared/types/domain.js'
+
 const numberHints = [
   'amount',
   'atRiskHours',
@@ -70,7 +72,7 @@ const integerHints = [
   'year',
 ]
 
-export function inferColumnType(field, resource) {
+export function inferColumnType(field: string, resource: ResourceDefinition): string {
   if (resource.jsonFields?.includes(field)) {
     return 'NVARCHAR(MAX)'
   }

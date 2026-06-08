@@ -1,6 +1,15 @@
+import type { AuthenticatedUser } from '../types/domain.js'
+
+interface PermissionRule {
+  prefix: string
+  read?: string | null
+  write?: string | null
+  create?: string | null
+}
+
 const readMethods = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-const rules = [
+const rules: PermissionRule[] = [
   { prefix: '/permissions', write: 'permissions.manage', read: 'permissions.manage' },
   { prefix: '/reports', write: 'reports.view', read: 'reports.view' },
   { prefix: '/dashboard', read: null },
@@ -49,7 +58,7 @@ const rules = [
   { prefix: '/settings', read: null, write: null },
 ]
 
-export function requiredPermissionForRequest(method, path) {
+export function requiredPermissionForRequest(method: string, path: string): string | null {
   const normalizedPath = normalizePath(path)
   const actionPermission = workshopCaseActionPermission(method, normalizedPath)
 
@@ -74,7 +83,7 @@ export function requiredPermissionForRequest(method, path) {
   return rule.write ?? null
 }
 
-function workshopCaseActionPermission(method, path) {
+function workshopCaseActionPermission(method: string, path: string): string | null {
   const normalizedMethod = String(method || '').toUpperCase()
 
   if (!['POST', 'PATCH', 'DELETE'].includes(normalizedMethod)) {
@@ -100,7 +109,7 @@ function workshopCaseActionPermission(method, path) {
   return null
 }
 
-export function hasPermission(user, permission) {
+export function hasPermission(user: AuthenticatedUser | undefined, permission: string | null): boolean {
   if (!permission) {
     return true
   }
@@ -118,7 +127,7 @@ export function hasPermission(user, permission) {
   return permissions.includes('*') || permissions.includes(permission)
 }
 
-function normalizePath(path) {
+function normalizePath(path: string): string {
   const value = String(path || '').trim()
 
   if (!value || value === '/') {

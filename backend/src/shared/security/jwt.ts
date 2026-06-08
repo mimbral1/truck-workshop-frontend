@@ -1,13 +1,23 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { AppError } from '../errors/app-error.js'
+import type { JwtPayload } from '../types/domain.js'
 
-const HEADER = { alg: 'HS256', typ: 'JWT' }
+const HEADER = { alg: 'HS256', typ: 'JWT' } as const
 
-export function signJwt(payload, { expiresInSeconds, secret }) {
+interface SignOptions {
+  expiresInSeconds: number
+  secret: string
+}
+
+interface VerifyOptions {
+  secret: string
+}
+
+export function signJwt(payload: JwtPayload, { expiresInSeconds, secret }: SignOptions): string {
   assertSecret(secret)
 
   const now = Math.floor(Date.now() / 1000)
-  const normalizedPayload = {
+  const normalizedPayload: JwtPayload = {
     ...payload,
     exp: now + expiresInSeconds,
     iat: now,
@@ -19,7 +29,7 @@ export function signJwt(payload, { expiresInSeconds, secret }) {
   return `${encodedHeader}.${encodedPayload}.${signature}`
 }
 
-export function verifyJwt(token, { secret }) {
+export function verifyJwt(token: string, { secret }: VerifyOptions): JwtPayload {
   assertSecret(secret)
 
   const parts = String(token || '').split('.')
@@ -51,29 +61,29 @@ export function verifyJwt(token, { secret }) {
   return payload
 }
 
-function assertSecret(secret) {
+function assertSecret(secret: string): void {
   if (!secret || String(secret).length < 16) {
     throw new AppError('JWT_SECRET debe tener al menos 16 caracteres', 500)
   }
 }
 
-function base64UrlEncodeJson(value) {
+function base64UrlEncodeJson(value: unknown): string {
   return Buffer.from(JSON.stringify(value)).toString('base64url')
 }
 
-function parseBase64UrlJson(value) {
+function parseBase64UrlJson(value: string): JwtPayload {
   try {
-    return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+    return JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as JwtPayload
   } catch {
     throw new AppError('Token invalido', 401)
   }
 }
 
-function sign(value, secret) {
+function sign(value: string, secret: string): string {
   return createHmac('sha256', secret).update(value).digest('base64url')
 }
 
-function safeEquals(first, second) {
+function safeEquals(first: string, second: string): boolean {
   const firstBuffer = Buffer.from(first)
   const secondBuffer = Buffer.from(second)
 
