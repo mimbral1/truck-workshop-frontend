@@ -6,7 +6,7 @@ import { sendResponse } from '../../shared/http/send-response.js'
 const service = new ApprovalService()
 
 export const resolveApproval = asyncHandler(async (request, response) => {
-  const approval = await service.resolve(request.params.id, request.body, getActorName(request, ['resolvedBy', 'approvedBy', 'updatedBy']))
+  const approval = await service.resolve(String(request.params.id), request.body, getActorName(request, ['resolvedBy', 'approvedBy', 'updatedBy']))
 
   sendResponse(response, { data: approval })
 })

@@ -12,13 +12,13 @@ export const createQuote = asyncHandler(async (request, response) => {
 })
 
 export const updateQuote = asyncHandler(async (request, response) => {
-  const quote = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy', 'approvedBy']))
+  const quote = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy', 'approvedBy']))
 
   sendResponse(response, { data: quote })
 })
 
 export const deleteQuote = asyncHandler(async (request, response) => {
-  const quote = await service.remove(request.params.id)
+  const quote = await service.remove(String(request.params.id))
 
   sendResponse(response, { data: quote })
 })

@@ -7,10 +7,37 @@ import {
   workshopBayResource,
   workshopCaseResource,
 } from '../../config/resources.js'
+import type { PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 
 const ACTIVE_EVENT_STATUSES = new Set(['scheduled', 'in_progress', 'waiting_parts', 'blocked'])
 
+interface ConflictQuery {
+  bayId: string
+  dateKey: string
+  endsAt: Date
+  mechanicId: string
+  startsAt: Date
+}
+
+interface Conflict {
+  bayId: unknown
+  bayName: unknown
+  caseNumber: unknown
+  endsAt: unknown
+  id: unknown
+  mechanicId: unknown
+  mechanicName: unknown
+  startsAt: unknown
+  type: string
+}
+
 export class ScheduleService {
+  private readonly cases: ResourceRepositoryContract
+  private readonly events: ResourceRepositoryContract
+  private readonly queue: ResourceRepositoryContract
+  private readonly bays: ResourceRepositoryContract
+  private readonly mechanics: ResourceRepositoryContract
+
   constructor() {
     this.cases = createRepository(workshopCaseResource)
     this.events = createRepository(scheduleEventResource)
@@ -19,10 +46,14 @@ export class ScheduleService {
     this.mechanics = createRepository(mechanicResource)
   }
 
-  async planCase(payload) {
-    const workshopCase = await this.requiredRecord(this.cases, payload.caseId, 'Caso no encontrado')
-    const bay = await this.requiredRecord(this.bays, payload.bayId, 'Estacion no encontrada')
-    const mechanic = await this.requiredRecord(this.mechanics, payload.mechanicId, 'Mecanico no encontrado')
+  async planCase(payload: PlainRecord): Promise<{
+    removedQueueItem: PlainRecord | null
+    scheduleEvent: PlainRecord | null
+    workshopCase: PlainRecord | null
+  }> {
+    const workshopCase = await this.requiredRecord(this.cases, payload.caseId as string, 'Caso no encontrado')
+    const bay = await this.requiredRecord(this.bays, payload.bayId as string, 'Estacion no encontrada')
+    const mechanic = await this.requiredRecord(this.mechanics, payload.mechanicId as string, 'Mecanico no encontrado')
     const estimatedHours = Number(payload.estimatedHours || 0)
 
     if (bay.status === 'maintenance') {
@@ -33,8 +64,8 @@ export class ScheduleService {
       throw new AppError('La duracion debe estar entre 0.5 y 12 horas', 400)
     }
 
-    const dateKey = normalizeDateKey(payload.date)
-    const startsAt = buildDateTime(dateKey, payload.startsAt)
+    const dateKey = normalizeDateKey(payload.date as string | undefined)
+    const startsAt = buildDateTime(dateKey, payload.startsAt as string | undefined)
     const endsAt = new Date(startsAt.getTime() + estimatedHours * 60 * 60 * 1000)
 
     if (!Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime())) {
@@ -42,10 +73,10 @@ export class ScheduleService {
     }
 
     const conflicts = await this.findConflicts({
-      bayId: bay.id,
+      bayId: bay.id as string,
       dateKey,
       endsAt,
-      mechanicId: mechanic.id,
+      mechanicId: mechanic.id as string,
       startsAt,
     })
 
@@ -54,9 +85,9 @@ export class ScheduleService {
     }
 
     const queueItem = payload.queueItemId
-      ? await this.queue.findById(payload.queueItemId)
-      : await this.findQueueItemByCase(workshopCase.id)
-    const hasPartsBlock = Boolean(queueItem?.hasPartsBlock || hasBlockingParts(workshopCase.requiredParts))
+      ? await this.queue.findById(payload.queueItemId as string)
+      : await this.findQueueItemByCase(workshopCase.id as string)
+    const hasPartsBlock = Boolean(queueItem?.hasPartsBlock || hasBlockingParts(workshopCase.requiredParts as PlainRecord[] | undefined))
     const scheduleEvent = await this.events.create({
       bayId: bay.id,
       bayName: bay.name,
@@ -76,15 +107,15 @@ export class ScheduleService {
       title: workshopCase.title,
       truckPlate: workshopCase.truckPlate,
     })
-    const updatedCase = await this.cases.update(workshopCase.id, {
+    const updatedCase = await this.cases.update(workshopCase.id as string, {
       currentStep: hasPartsBlock ? 'Agendado con espera de repuestos' : 'Agendado en taller',
       estimatedDeliveryAt: endsAt.toISOString(),
       mechanicId: mechanic.id,
       mechanicName: mechanic.name,
-      status: nextCaseStatus(workshopCase.status),
+      status: nextCaseStatus(workshopCase.status as string),
       updatedAt: new Date().toISOString(),
     })
-    const removedQueueItem = queueItem ? await this.queue.remove(queueItem.id) : null
+    const removedQueueItem = queueItem ? await this.queue.remove(queueItem.id as string) : null
 
     return {
       removedQueueItem,
@@ -93,7 +124,7 @@ export class ScheduleService {
     }
   }
 
-  async requiredRecord(repository, id, message) {
+  async requiredRecord(repository: ResourceRepositoryContract, id: string, message: string): Promise<PlainRecord> {
     if (!id) {
       throw new AppError(message, 400)
     }
@@ -107,14 +138,15 @@ export class ScheduleService {
     return record
   }
 
-  async findConflicts({ bayId, dateKey, endsAt, mechanicId, startsAt }) {
+  async findConflicts({ bayId, dateKey, endsAt, mechanicId, startsAt }: ConflictQuery): Promise<Conflict[]> {
     const result = await this.events.findAll({ limit: 100, order: 'asc', sort: 'startsAt' })
 
     return result.data
-      .filter((event) => ACTIVE_EVENT_STATUSES.has(event.status))
-      .filter((event) => dateKeyFromValue(event.date) === dateKey)
+      .map((event) => event as PlainRecord)
+      .filter((event) => ACTIVE_EVENT_STATUSES.has(event.status as string))
+      .filter((event) => dateKeyFromValue(event.date as string) === dateKey)
       .filter((event) => event.bayId === bayId || event.mechanicId === mechanicId)
-      .filter((event) => overlaps(startsAt, endsAt, new Date(event.startsAt), new Date(event.endsAt)))
+      .filter((event) => overlaps(startsAt, endsAt, new Date(event.startsAt as string), new Date(event.endsAt as string)))
       .map((event) => ({
         bayId: event.bayId,
         bayName: event.bayName,
@@ -128,14 +160,14 @@ export class ScheduleService {
       }))
   }
 
-  async findQueueItemByCase(caseId) {
+  async findQueueItemByCase(caseId: string): Promise<PlainRecord | null> {
     const result = await this.queue.findAll({ caseId, limit: 100 })
 
-    return result.data.find((item) => item.caseId === caseId) || null
+    return result.data.find((item) => (item as PlainRecord).caseId === caseId) || null
   }
 }
 
-function normalizeDateKey(value) {
+function normalizeDateKey(value: string | undefined): string {
   if (!value) {
     return new Date().toISOString().slice(0, 10)
   }
@@ -147,29 +179,29 @@ function normalizeDateKey(value) {
   return dateKeyFromValue(value)
 }
 
-function dateKeyFromValue(value) {
+function dateKeyFromValue(value: string): string {
   return new Date(value).toISOString().slice(0, 10)
 }
 
-function buildDateTime(dateKey, startsAt) {
+function buildDateTime(dateKey: string, startsAt: string | undefined): Date {
   if (String(startsAt || '').includes('T')) {
-    return new Date(startsAt)
+    return new Date(startsAt as string)
   }
 
   return new Date(`${dateKey}T${startsAt || '08:00'}:00`)
 }
 
-function overlaps(firstStart, firstEnd, secondStart, secondEnd) {
+function overlaps(firstStart: Date, firstEnd: Date, secondStart: Date, secondEnd: Date): boolean {
   return firstStart < secondEnd && secondStart < firstEnd
 }
 
-function hasBlockingParts(requiredParts = []) {
+function hasBlockingParts(requiredParts: PlainRecord[] = []): boolean {
   return requiredParts.some((part) =>
-    ['out_of_stock', 'purchase_required', 'po_created', 'waiting_reception'].includes(part.status),
+    ['out_of_stock', 'purchase_required', 'po_created', 'waiting_reception'].includes(part.status as string),
   )
 }
 
-function nextCaseStatus(status) {
+function nextCaseStatus(status: string): string {
   if (['closed', 'testing', 'repairing'].includes(status)) {
     return status
   }

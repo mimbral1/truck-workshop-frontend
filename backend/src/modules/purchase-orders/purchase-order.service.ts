@@ -2,6 +2,7 @@ import { purchaseOrderResource } from '../../config/resources.js'
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
 import { stripImmutableFields } from '../../shared/utils/payload-sanitizers.js'
+import type { PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 
 const VALID_STATUSES = new Set([
   'DRAFT',
@@ -19,12 +20,28 @@ const VALID_STATUSES = new Set([
   'DOCUMENT_BLOCKED',
 ])
 
+interface NormalizeOptions {
+  partial?: boolean
+  purchaseOrderNumber?: string
+}
+
+interface NormalizedItem {
+  estimatedUnitCost: number
+  name: string
+  partId: string
+  quantity: number
+  requiredForCaseId?: string
+  sku: string
+}
+
 export class PurchaseOrderService {
+  private readonly purchaseOrders: ResourceRepositoryContract
+
   constructor() {
     this.purchaseOrders = createRepository(purchaseOrderResource)
   }
 
-  async create(payload, actorName) {
+  async create(payload: PlainRecord, actorName: string) {
     const purchaseOrderNumber = await this.buildPurchaseOrderNumber(payload.purchaseOrderNumber)
     const normalized = normalizePurchaseOrderPayload(payload, actorName, { purchaseOrderNumber })
 
@@ -35,7 +52,7 @@ export class PurchaseOrderService {
     })
   }
 
-  update(id, payload, actorName) {
+  update(id: string, payload: PlainRecord, actorName: string) {
     const normalized = normalizePurchaseOrderPayload(stripImmutableFields(payload, ['deletedBy']), actorName, { partial: true })
 
     return this.purchaseOrders.update(id, {
@@ -44,13 +61,13 @@ export class PurchaseOrderService {
     })
   }
 
-  async remove(id, actorName) {
+  async remove(id: string, actorName: string) {
     await this.purchaseOrders.update(id, { deletedBy: actorName, updatedBy: actorName })
 
     return this.purchaseOrders.remove(id)
   }
 
-  async buildPurchaseOrderNumber(purchaseOrderNumber) {
+  async buildPurchaseOrderNumber(purchaseOrderNumber: unknown): Promise<string> {
     if (purchaseOrderNumber) {
       return String(purchaseOrderNumber).trim().toUpperCase()
     }
@@ -58,7 +75,7 @@ export class PurchaseOrderService {
     const year = new Date().getFullYear()
     const result = await this.purchaseOrders.findAll({ limit: 100, order: 'desc', sort: 'createdAt' })
     const maxForYear = result.data.reduce((max, order) => {
-      const match = String(order.purchaseOrderNumber || '').match(/^OC-(\d{4})-(\d+)$/)
+      const match = String((order as PlainRecord).purchaseOrderNumber || '').match(/^OC-(\d{4})-(\d+)$/)
 
       if (!match || Number(match[1]) !== year) {
         return max
@@ -71,8 +88,8 @@ export class PurchaseOrderService {
   }
 }
 
-function normalizePurchaseOrderPayload(payload, actorName, options = {}) {
-  const normalized = { ...payload }
+function normalizePurchaseOrderPayload(payload: PlainRecord, actorName: string, options: NormalizeOptions = {}): PlainRecord {
+  const normalized: PlainRecord = { ...payload }
 
   if (!options.partial || payload.purchaseOrderNumber !== undefined || options.purchaseOrderNumber) {
     normalized.purchaseOrderNumber = options.purchaseOrderNumber || String(payload.purchaseOrderNumber || '').trim().toUpperCase()
@@ -98,8 +115,8 @@ function normalizePurchaseOrderPayload(payload, actorName, options = {}) {
     normalized.relatedCaseId = payload.relatedCaseId ? String(payload.relatedCaseId).trim() : null
   }
 
-  if (!options.partial || payload.approvedBy !== undefined || ['APPROVED', 'ORDERED'].includes(normalized.status)) {
-    normalized.approvedBy = payload.approvedBy || (['APPROVED', 'ORDERED'].includes(normalized.status) ? actorName : null)
+  if (!options.partial || payload.approvedBy !== undefined || ['APPROVED', 'ORDERED'].includes(normalized.status as string)) {
+    normalized.approvedBy = payload.approvedBy || (['APPROVED', 'ORDERED'].includes(normalized.status as string) ? actorName : null)
   }
 
   if (!options.partial || payload.expectedDeliveryDate !== undefined) {
@@ -109,14 +126,14 @@ function normalizePurchaseOrderPayload(payload, actorName, options = {}) {
   if (!options.partial || payload.items !== undefined) {
     normalized.items = normalizeItems(payload.items, normalized.relatedCaseId)
 
-    if (!options.partial && normalized.items.length === 0) {
+    if (!options.partial && (normalized.items as NormalizedItem[]).length === 0) {
       throw new AppError('La orden de compra requiere al menos un item', 400)
     }
   }
 
   if (!options.partial || payload.totalEstimated !== undefined || payload.items !== undefined) {
     const itemTotal = Array.isArray(normalized.items)
-      ? normalized.items.reduce((total, item) => total + item.quantity * item.estimatedUnitCost, 0)
+      ? (normalized.items as NormalizedItem[]).reduce((total, item) => total + item.quantity * item.estimatedUnitCost, 0)
       : undefined
     const providedTotal = Number(payload.totalEstimated || 0)
 
@@ -126,19 +143,20 @@ function normalizePurchaseOrderPayload(payload, actorName, options = {}) {
   return normalized
 }
 
-function normalizeStatus(status) {
+function normalizeStatus(status: unknown): string {
   const normalizedStatus = String(status || 'REQUESTED').trim().toUpperCase()
 
   return VALID_STATUSES.has(normalizedStatus) ? normalizedStatus : 'REQUESTED'
 }
 
-function normalizeItems(items, relatedCaseId) {
+function normalizeItems(items: unknown, relatedCaseId: unknown): NormalizedItem[] {
   if (!Array.isArray(items)) {
     return []
   }
 
   return items
-    .map((item, index) => {
+    .map((rawItem, index) => {
+      const item = rawItem as PlainRecord
       const sku = String(item.sku || '').trim().toUpperCase()
       const name = String(item.name || item.itemName || '').trim()
       const quantity = Number(item.quantity || 0)
@@ -149,14 +167,14 @@ function normalizeItems(items, relatedCaseId) {
         name,
         partId: String(item.partId || sku || `item-${index + 1}`).trim(),
         quantity,
-        requiredForCaseId: item.requiredForCaseId || relatedCaseId || undefined,
+        requiredForCaseId: (item.requiredForCaseId || relatedCaseId || undefined) as string | undefined,
         sku,
       }
     })
     .filter((item) => item.name && item.sku && item.quantity > 0)
 }
 
-function normalizeDate(value) {
+function normalizeDate(value: unknown): string {
   const rawValue = String(value || '').trim()
   const date = rawValue.length === 10 ? new Date(`${rawValue}T18:00:00.000Z`) : new Date(rawValue)
 
@@ -167,7 +185,7 @@ function normalizeDate(value) {
   return date.toISOString()
 }
 
-function defaultExpectedDeliveryDate() {
+function defaultExpectedDeliveryDate(): string {
   const date = new Date()
   date.setDate(date.getDate() + 3)
   date.setUTCHours(18, 0, 0, 0)

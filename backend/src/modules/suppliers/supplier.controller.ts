@@ -12,13 +12,13 @@ export const createSupplier = asyncHandler(async (request, response) => {
 })
 
 export const updateSupplier = asyncHandler(async (request, response) => {
-  const supplier = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+  const supplier = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: supplier })
 })
 
 export const deleteSupplier = asyncHandler(async (request, response) => {
-  const supplier = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy']))
+  const supplier = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: supplier })
 })

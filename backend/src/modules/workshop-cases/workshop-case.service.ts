@@ -11,8 +11,11 @@ import {
   waitingQueueResource,
   workshopCaseResource,
 } from '../../config/resources.js'
+import type { ListQuery, PaginatedResult, PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 
-const SLA_TARGET_HOURS = {
+type Priority = 'low' | 'medium' | 'high' | 'critical'
+
+const SLA_TARGET_HOURS: Record<Priority, number> = {
   critical: 6,
   high: 24,
   low: 96,
@@ -22,6 +25,16 @@ const SLA_TARGET_HOURS = {
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'critical'])
 
 export class WorkshopCaseService {
+  private readonly cases: ResourceRepositoryContract
+  private readonly escalations: ResourceRepositoryContract
+  private readonly assignments: ResourceRepositoryContract
+  private readonly drivers: ResourceRepositoryContract
+  private readonly fleetAvailability: ResourceRepositoryContract
+  private readonly fleetTrucks: ResourceRepositoryContract
+  private readonly truckTimeline: ResourceRepositoryContract
+  private readonly trucks: ResourceRepositoryContract
+  private readonly waitingQueue: ResourceRepositoryContract
+
   constructor() {
     this.cases = createRepository(workshopCaseResource)
     this.escalations = createRepository(escalationEventResource)
@@ -34,11 +47,11 @@ export class WorkshopCaseService {
     this.waitingQueue = createRepository(waitingQueueResource)
   }
 
-  list(query) {
+  list(query: ListQuery): Promise<PaginatedResult> {
     return this.cases.findAll(query)
   }
 
-  async get(id) {
+  async get(id: string): Promise<PlainRecord> {
     const workshopCase = await this.cases.findById(id)
 
     if (!workshopCase) {
@@ -48,29 +61,29 @@ export class WorkshopCaseService {
     return workshopCase
   }
 
-  async create(payload, actorName = 'Sistema') {
+  async create(payload: PlainRecord, actorName = 'Sistema'): Promise<PlainRecord | null> {
     const normalizedPayload = await this.normalizeCreatePayload(payload)
     const workshopCase = await this.cases.create(normalizedPayload)
 
-    await this.syncFleetIntake(workshopCase, actorName)
+    await this.syncFleetIntake(workshopCase as PlainRecord, actorName)
 
     return workshopCase
   }
 
-  update(id, payload) {
+  update(id: string, payload: PlainRecord): Promise<PlainRecord | null> {
     return this.cases.update(id, payload)
   }
 
-  remove(id) {
+  remove(id: string): Promise<PlainRecord> {
     return this.cases.remove(id)
   }
 
-  async listEscalations(caseId) {
+  async listEscalations(caseId: string): Promise<PaginatedResult> {
     await this.get(caseId)
     return this.escalations.findAll({ caseId, limit: 100, sort: 'createdAt', order: 'desc' })
   }
 
-  async escalate(caseId, payload) {
+  async escalate(caseId: string, payload: PlainRecord): Promise<{ escalation: PlainRecord | null; workshopCase: PlainRecord | null }> {
     const workshopCase = await this.get(caseId)
     const escalation = await this.escalations.create({
       caseId,
@@ -89,7 +102,7 @@ export class WorkshopCaseService {
     return { escalation, workshopCase: updatedCase }
   }
 
-  async assign(caseId, payload) {
+  async assign(caseId: string, payload: PlainRecord): Promise<{ assignment: PlainRecord | null; workshopCase: PlainRecord | null }> {
     const workshopCase = await this.get(caseId)
     await this.completeOpenAssignments(caseId)
     const assignment = await this.assignments.create({
@@ -111,7 +124,7 @@ export class WorkshopCaseService {
     return { assignment, workshopCase: updatedCase }
   }
 
-  async close(caseId, payload, actorName = 'Sistema') {
+  async close(caseId: string, payload: PlainRecord, actorName = 'Sistema'): Promise<PlainRecord | null> {
     const workshopCase = await this.get(caseId)
 
     if (workshopCase.status === 'closed') {
@@ -141,12 +154,12 @@ export class WorkshopCaseService {
       updatedAt: now,
     })
 
-    await this.syncFleetClosure(updatedCase, closedBy)
+    await this.syncFleetClosure(updatedCase as PlainRecord, closedBy)
 
     return updatedCase
   }
 
-  async normalizeCreatePayload(payload) {
+  async normalizeCreatePayload(payload: PlainRecord): Promise<PlainRecord> {
     const truckId = String(payload.truckId || '').trim()
     const title = String(payload.title || payload.failureDescription || '').trim()
 
@@ -164,7 +177,7 @@ export class WorkshopCaseService {
       throw new AppError('Camion no encontrado en flota', 404)
     }
 
-    const driver = await this.findDriver(payload.driverId)
+    const driver = await this.findDriver(payload.driverId as string | undefined)
     const now = new Date().toISOString()
     const priority = normalizePriority(payload)
     const caseNumber = String(payload.caseNumber || payload.code || buildCaseNumber()).trim()
@@ -206,11 +219,11 @@ export class WorkshopCaseService {
     }
   }
 
-  async findTruck(truckId) {
+  async findTruck(truckId: string): Promise<PlainRecord | null> {
     return (await this.fleetTrucks.findById(truckId)) || (await this.trucks.findById(truckId))
   }
 
-  async findDriver(driverId) {
+  async findDriver(driverId: string | undefined): Promise<PlainRecord | null> {
     const id = String(driverId || '').trim()
 
     if (!id) {
@@ -220,9 +233,9 @@ export class WorkshopCaseService {
     return this.drivers.findById(id)
   }
 
-  async syncFleetIntake(workshopCase, actorName) {
-    const fleetTruck = await this.fleetTrucks.findById(workshopCase.truckId)
-    const legacyTruck = await this.trucks.findById(workshopCase.truckId)
+  async syncFleetIntake(workshopCase: PlainRecord, actorName: string): Promise<void> {
+    const fleetTruck = await this.fleetTrucks.findById(workshopCase.truckId as string)
+    const legacyTruck = await this.trucks.findById(workshopCase.truckId as string)
     const blocked = Boolean(workshopCase.immobilized || workshopCase.safetyImpact || workshopCase.priority === 'critical')
     const operationalStatus = blocked ? 'BLOCKED' : 'IN_WORKSHOP'
     const availabilityColumn = blocked ? 'MAINTENANCE_BLOCKED' : 'IN_WORKSHOP'
@@ -230,14 +243,14 @@ export class WorkshopCaseService {
 
     await Promise.allSettled([
       fleetTruck
-        ? this.fleetTrucks.update(workshopCase.truckId, {
+        ? this.fleetTrucks.update(workshopCase.truckId as string, {
             estimatedAvailableAt: workshopCase.estimatedDeliveryAt || workshopCase.slaDueAt,
             mainBlocker: blocker,
             operationalStatus,
           })
         : undefined,
       legacyTruck
-        ? this.trucks.update(workshopCase.truckId, {
+        ? this.trucks.update(workshopCase.truckId as string, {
             lastServiceAt: workshopCase.createdAt,
             status: blocked ? 'blocked' : 'in-workshop',
           })
@@ -264,7 +277,7 @@ export class WorkshopCaseService {
         caseId: workshopCase.id,
         caseNumber: workshopCase.caseNumber,
         customerName: workshopCase.customerName,
-        estimatedHours: estimateHours(workshopCase.priority),
+        estimatedHours: estimateHours(workshopCase.priority as Priority),
         hasPartsBlock: false,
         id: `queue-${workshopCase.id}`,
         priority: workshopCase.priority,
@@ -276,22 +289,22 @@ export class WorkshopCaseService {
     ])
   }
 
-  async syncFleetClosure(workshopCase, actorName) {
+  async syncFleetClosure(workshopCase: PlainRecord, actorName: string): Promise<void> {
     const now = new Date().toISOString()
 
     await Promise.allSettled([
-      this.fleetTrucks.findById(workshopCase.truckId).then((truck) =>
+      this.fleetTrucks.findById(workshopCase.truckId as string).then((truck) =>
         truck
-          ? this.fleetTrucks.update(workshopCase.truckId, {
+          ? this.fleetTrucks.update(workshopCase.truckId as string, {
               estimatedAvailableAt: now,
               mainBlocker: null,
               operationalStatus: 'AVAILABLE',
             })
           : undefined,
       ),
-      this.trucks.findById(workshopCase.truckId).then((truck) =>
+      this.trucks.findById(workshopCase.truckId as string).then((truck) =>
         truck
-          ? this.trucks.update(workshopCase.truckId, {
+          ? this.trucks.update(workshopCase.truckId as string, {
               lastServiceAt: now,
               status: 'available',
             })
@@ -312,29 +325,35 @@ export class WorkshopCaseService {
     ])
   }
 
-  async completeOpenAssignments(caseId) {
+  async completeOpenAssignments(caseId: string): Promise<void> {
     const result = await this.assignments.findAll({ caseId, limit: 100 })
-    const openAssignments = result.data.filter((assignment) => ['active', 'paused', 'queued'].includes(assignment.status))
+    const openAssignments = result.data.filter((assignment) =>
+      ['active', 'paused', 'queued'].includes((assignment as PlainRecord).status as string),
+    )
 
-    await Promise.all(openAssignments.map((assignment) => this.assignments.update(assignment.id, { status: 'completed' })))
+    await Promise.all(
+      openAssignments.map((assignment) =>
+        this.assignments.update((assignment as PlainRecord).id as string, { status: 'completed' }),
+      ),
+    )
   }
 }
 
-function normalizePriority(payload) {
+function normalizePriority(payload: PlainRecord): Priority {
   if (payload.safetyImpact || payload.immobilized) {
     return 'critical'
   }
 
   const priority = String(payload.priority || 'medium')
 
-  return VALID_PRIORITIES.has(priority) ? priority : 'medium'
+  return (VALID_PRIORITIES.has(priority) ? priority : 'medium') as Priority
 }
 
-function buildCaseNumber() {
+function buildCaseNumber(): string {
   return `TW-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`
 }
 
-function addHours(value, hours) {
+function addHours(value: string, hours: number): string {
   const date = new Date(value)
 
   date.setHours(date.getHours() + hours)
@@ -342,7 +361,7 @@ function addHours(value, hours) {
   return date.toISOString()
 }
 
-function estimateHours(priority) {
+function estimateHours(priority: Priority): number {
   return {
     critical: 2,
     high: 4,

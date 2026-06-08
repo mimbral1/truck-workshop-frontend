@@ -8,12 +8,34 @@ import {
 import { createRepository } from '../../shared/data/repository-factory.js'
 import { AppError } from '../../shared/errors/app-error.js'
 import { stripImmutableFields } from '../../shared/utils/payload-sanitizers.js'
+import type { PlainRecord, ResourceRepositoryContract } from '../../shared/types/domain.js'
 
 const VALID_QUOTE_STATUSES = new Set(['DRAFT', 'SENT', 'APPROVED', 'REJECTED', 'EXPIRED'])
 const VALID_LINE_TYPES = new Set(['part', 'labor', 'discount'])
 const WORKSHOP_REPAIR_STATUSES = new Set(['new', 'diagnosis', 'solution', 'assigned'])
 
+interface NormalizeOptions {
+  actorName?: string
+  currentQuote?: PlainRecord
+  partial?: boolean
+  quoteNumber?: string
+  workshopCase: PlainRecord
+}
+
+interface NormalizedLineItem {
+  description: string
+  id: string
+  quantity: number
+  type: string
+  unitPrice: number
+}
+
 export class QuoteService {
+  private readonly approvals: ResourceRepositoryContract
+  private readonly cases: ResourceRepositoryContract
+  private readonly quotes: ResourceRepositoryContract
+  private readonly repairSolutions: ResourceRepositoryContract
+
   constructor() {
     this.approvals = createRepository(approvalResource)
     this.cases = createRepository(workshopCaseResource)
@@ -21,7 +43,7 @@ export class QuoteService {
     this.repairSolutions = createRepository(repairSolutionResource)
   }
 
-  async create(payload, actorName) {
+  async create(payload: PlainRecord, actorName: string) {
     const workshopCase = await this.requireCase(payload.caseId)
     const quoteNumber = await this.buildQuoteNumber(payload.quoteNumber)
     const normalized = await this.normalizeQuotePayload(payload, {
@@ -31,12 +53,12 @@ export class QuoteService {
     })
     const quote = await this.quotes.create(normalized)
 
-    await this.applyStatusFlow(quote, workshopCase, actorName)
+    await this.applyStatusFlow(quote as PlainRecord, workshopCase, actorName)
 
     return quote
   }
 
-  async update(id, payload, actorName) {
+  async update(id: string, payload: PlainRecord, actorName: string) {
     const currentQuote = await this.requireQuote(id)
     const workshopCase = await this.requireCase(payload.caseId || currentQuote.caseId)
     const normalized = await this.normalizeQuotePayload(stripImmutableFields(payload, ['customerId', 'quoteNumber', 'updatedAt']), {
@@ -47,12 +69,12 @@ export class QuoteService {
     })
     const quote = await this.quotes.update(id, normalized)
 
-    await this.applyStatusFlow(quote, workshopCase, actorName)
+    await this.applyStatusFlow(quote as PlainRecord, workshopCase, actorName)
 
     return quote
   }
 
-  async remove(id) {
+  async remove(id: string) {
     const quote = await this.requireQuote(id)
 
     if (quote.status !== 'DRAFT') {
@@ -62,7 +84,7 @@ export class QuoteService {
     return this.quotes.remove(id)
   }
 
-  async requireQuote(id) {
+  async requireQuote(id: string): Promise<PlainRecord> {
     const quote = await this.quotes.findById(id)
 
     if (!quote) {
@@ -72,7 +94,7 @@ export class QuoteService {
     return quote
   }
 
-  async requireCase(caseId) {
+  async requireCase(caseId: unknown): Promise<PlainRecord> {
     const id = String(caseId || '').trim()
 
     if (!id) {
@@ -88,8 +110,8 @@ export class QuoteService {
     return workshopCase
   }
 
-  async normalizeQuotePayload(payload, options) {
-    const normalized = { ...payload }
+  async normalizeQuotePayload(payload: PlainRecord, options: NormalizeOptions): Promise<PlainRecord> {
+    const normalized: PlainRecord = { ...payload }
 
     if (!options.partial || payload.quoteNumber !== undefined || options.quoteNumber) {
       normalized.quoteNumber = options.quoteNumber || String(payload.quoteNumber || '').trim().toUpperCase()
@@ -128,13 +150,13 @@ export class QuoteService {
     if (!options.partial || payload.items !== undefined) {
       normalized.items = await this.normalizeItems(payload.items, options)
 
-      if (!options.partial && normalized.items.length === 0) {
+      if (!options.partial && (normalized.items as NormalizedLineItem[]).length === 0) {
         throw new AppError('La cotizacion requiere al menos un item con valor', 400)
       }
     }
 
     if (!options.partial || payload.total !== undefined || payload.items !== undefined) {
-      const items = normalized.items || options.currentQuote?.items || []
+      const items = (normalized.items as NormalizedLineItem[] | undefined) || (options.currentQuote?.items as NormalizedLineItem[] | undefined) || []
       normalized.total = calculateTotal(items)
 
       if (Number(payload.total || 0) > 0 && (!items || items.length === 0)) {
@@ -153,10 +175,10 @@ export class QuoteService {
     return normalized
   }
 
-  async normalizeItems(items, options) {
+  async normalizeItems(items: unknown, options: NormalizeOptions): Promise<NormalizedLineItem[]> {
     if (Array.isArray(items) && items.length > 0) {
       return items
-        .map((item, index) => normalizeLineItem(item, index))
+        .map((item, index) => normalizeLineItem(item as PlainRecord, index))
         .filter((item) => item.description && item.quantity > 0 && item.unitPrice !== 0)
     }
 
@@ -182,18 +204,18 @@ export class QuoteService {
     ]
   }
 
-  async findLatestRepairSolution(caseId) {
+  async findLatestRepairSolution(caseId: unknown): Promise<PlainRecord | undefined> {
     const result = await this.repairSolutions.findAll({
-      caseId,
+      caseId: caseId as string | number | undefined,
       limit: 1,
       order: 'desc',
       sort: 'updatedAt',
     })
 
-    return result.data[0]
+    return result.data[0] as PlainRecord | undefined
   }
 
-  async buildQuoteNumber(quoteNumber) {
+  async buildQuoteNumber(quoteNumber: unknown): Promise<string> {
     if (quoteNumber) {
       return String(quoteNumber).trim().toUpperCase()
     }
@@ -201,7 +223,7 @@ export class QuoteService {
     const year = new Date().getFullYear()
     const result = await this.quotes.findAll({ limit: 100, order: 'desc', sort: 'createdAt' })
     const maxForYear = result.data.reduce((max, quote) => {
-      const match = String(quote.quoteNumber || '').match(/^COT-(\d{4})-(\d+)$/)
+      const match = String((quote as PlainRecord).quoteNumber || '').match(/^COT-(\d{4})-(\d+)$/)
 
       if (!match || Number(match[1]) !== year) {
         return max
@@ -213,7 +235,7 @@ export class QuoteService {
     return `COT-${year}-${String(maxForYear + 1).padStart(4, '0')}`
   }
 
-  async applyStatusFlow(quote, workshopCase, actorName) {
+  async applyStatusFlow(quote: PlainRecord, workshopCase: PlainRecord, actorName: string) {
     const status = normalizeStatus(quote.status)
 
     if (status === 'SENT') {
@@ -231,11 +253,11 @@ export class QuoteService {
     await this.syncCaseWithQuote(quote, workshopCase)
   }
 
-  async ensurePendingQuoteApproval(quote, actorName) {
+  async ensurePendingQuoteApproval(quote: PlainRecord, actorName: string) {
     const existing = await this.findQuoteApproval(quote)
 
     if (existing) {
-      return this.approvals.update(existing.id, {
+      return this.approvals.update(existing.id as string, {
         amount: quote.total,
         status: 'pending',
       })
@@ -254,7 +276,7 @@ export class QuoteService {
     })
   }
 
-  async resolveQuoteApproval(quote, status, actorName) {
+  async resolveQuoteApproval(quote: PlainRecord, status: string, actorName: string) {
     const approval = await this.findQuoteApproval(quote)
 
     if (!approval) {
@@ -272,32 +294,32 @@ export class QuoteService {
       })
     }
 
-    return this.approvals.update(approval.id, {
+    return this.approvals.update(approval.id as string, {
       amount: quote.total,
       resolvedAt: new Date().toISOString(),
       status,
     })
   }
 
-  async findQuoteApproval(quote) {
+  async findQuoteApproval(quote: PlainRecord): Promise<PlainRecord | undefined> {
     const result = await this.approvals.findAll({
-      caseId: quote.caseId,
+      caseId: quote.caseId as string | number | undefined,
       limit: 100,
       order: 'desc',
       sort: 'createdAt',
       type: 'quote',
     })
 
-    return result.data.find((approval) => approval.relatedEntityId === quote.id)
+    return result.data.find((approval) => (approval as PlainRecord).relatedEntityId === quote.id) as PlainRecord | undefined
   }
 
-  async syncCaseWithQuote(quote, workshopCase) {
-    const patch = {
+  async syncCaseWithQuote(quote: PlainRecord, workshopCase: PlainRecord) {
+    const patch: PlainRecord = {
       currentStep: currentStepForQuoteStatus(quote.status),
       estimatedCost: quote.total,
     }
 
-    if (quote.status === 'APPROVED' && WORKSHOP_REPAIR_STATUSES.has(workshopCase.status)) {
+    if (quote.status === 'APPROVED' && WORKSHOP_REPAIR_STATUSES.has(workshopCase.status as string)) {
       patch.status = 'repairing'
     }
 
@@ -305,18 +327,18 @@ export class QuoteService {
       patch.status = 'solution'
     }
 
-    return this.cases.update(workshopCase.id, patch)
+    return this.cases.update(workshopCase.id as string, patch)
   }
 }
 
-function normalizeStatus(status) {
+function normalizeStatus(status: unknown): string {
   const normalized = String(status || 'DRAFT').trim().toUpperCase()
 
   return VALID_QUOTE_STATUSES.has(normalized) ? normalized : 'DRAFT'
 }
 
-function normalizeLineItem(item, index) {
-  const type = VALID_LINE_TYPES.has(item.type) ? item.type : 'part'
+function normalizeLineItem(item: PlainRecord, index: number): NormalizedLineItem {
+  const type = VALID_LINE_TYPES.has(item.type as string) ? (item.type as string) : 'part'
   const quantity = Math.max(Number(item.quantity || 0), 0)
   const rawUnitPrice = Number(item.unitPrice || item.estimatedUnitCost || item.amount || 0)
   const unitPrice = type === 'discount' ? -Math.abs(rawUnitPrice) : Math.max(rawUnitPrice, 0)
@@ -330,14 +352,14 @@ function normalizeLineItem(item, index) {
   }
 }
 
-function calculateTotal(items) {
+function calculateTotal(items: NormalizedLineItem[]): number {
   return Math.max(
     items.reduce((total, item) => total + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0),
     0,
   )
 }
 
-function normalizeDate(value) {
+function normalizeDate(value: unknown): string {
   const rawValue = String(value || '').trim()
   const date = rawValue.length === 10 ? new Date(`${rawValue}T18:00:00.000Z`) : new Date(rawValue)
 
@@ -348,7 +370,7 @@ function normalizeDate(value) {
   return date.toISOString()
 }
 
-function defaultExpiresAt() {
+function defaultExpiresAt(): string {
   const date = new Date()
   date.setDate(date.getDate() + 3)
   date.setUTCHours(18, 0, 0, 0)
@@ -356,8 +378,8 @@ function defaultExpiresAt() {
   return date.toISOString()
 }
 
-function currentStepForQuoteStatus(status) {
-  const steps = {
+function currentStepForQuoteStatus(status: unknown): string {
+  const steps: Record<string, string> = {
     APPROVED: 'Cotizacion aprobada',
     DRAFT: 'Cotizacion en borrador',
     EXPIRED: 'Cotizacion expirada',

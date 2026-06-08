@@ -12,13 +12,13 @@ export const createDiagnostic = asyncHandler(async (request, response) => {
 })
 
 export const updateDiagnostic = asyncHandler(async (request, response) => {
-  const diagnostic = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+  const diagnostic = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: diagnostic })
 })
 
 export const deleteDiagnostic = asyncHandler(async (request, response) => {
-  const diagnostic = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy']))
+  const diagnostic = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: diagnostic })
 })

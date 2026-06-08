@@ -12,13 +12,13 @@ export const createWarehouseLocation = asyncHandler(async (request, response) =>
 })
 
 export const updateWarehouseLocation = asyncHandler(async (request, response) => {
-  const location = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+  const location = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: location })
 })
 
 export const deleteWarehouseLocation = asyncHandler(async (request, response) => {
-  const location = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy']))
+  const location = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: location })
 })

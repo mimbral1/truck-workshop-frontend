@@ -12,13 +12,13 @@ export const createPart = asyncHandler(async (request, response) => {
 })
 
 export const updatePart = asyncHandler(async (request, response) => {
-  const part = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy']))
+  const part = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: part })
 })
 
 export const deletePart = asyncHandler(async (request, response) => {
-  const part = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy']))
+  const part = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy']))
 
   sendResponse(response, { data: part })
 })

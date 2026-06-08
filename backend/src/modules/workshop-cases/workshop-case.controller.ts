@@ -1,16 +1,17 @@
 import { WorkshopCaseService } from './workshop-case.service.js'
 import { asyncHandler } from '../../shared/http/async-handler.js'
 import { getActorName } from '../../shared/http/request-actor.js'
-import { sendResponse } from '../../shared/http/send-response.js'
+import { sendResponse, type ResponsePayload } from '../../shared/http/send-response.js'
+import type { ListQuery } from '../../shared/types/domain.js'
 
 const service = new WorkshopCaseService()
 
 export const listWorkshopCases = asyncHandler(async (request, response) => {
-  sendResponse(response, await service.list(request.query))
+  sendResponse(response, (await service.list(request.query as unknown as ListQuery)) as unknown as ResponsePayload)
 })
 
 export const getWorkshopCase = asyncHandler(async (request, response) => {
-  sendResponse(response, { data: await service.get(request.params.id) })
+  sendResponse(response, { data: await service.get(String(request.params.id)) })
 })
 
 export const createWorkshopCase = asyncHandler(async (request, response) => {
@@ -18,25 +19,25 @@ export const createWorkshopCase = asyncHandler(async (request, response) => {
 })
 
 export const updateWorkshopCase = asyncHandler(async (request, response) => {
-  sendResponse(response, { data: await service.update(request.params.id, request.body) })
+  sendResponse(response, { data: await service.update(String(request.params.id), request.body) })
 })
 
 export const deleteWorkshopCase = asyncHandler(async (request, response) => {
-  sendResponse(response, { data: await service.remove(request.params.id) })
+  sendResponse(response, { data: await service.remove(String(request.params.id)) })
 })
 
 export const listEscalations = asyncHandler(async (request, response) => {
-  sendResponse(response, await service.listEscalations(request.params.id))
+  sendResponse(response, (await service.listEscalations(String(request.params.id))) as unknown as ResponsePayload)
 })
 
 export const escalateWorkshopCase = asyncHandler(async (request, response) => {
-  sendResponse(response, { data: await service.escalate(request.params.id, request.body) }, 201)
+  sendResponse(response, { data: await service.escalate(String(request.params.id), request.body) }, 201)
 })
 
 export const assignWorkshopCase = asyncHandler(async (request, response) => {
-  sendResponse(response, { data: await service.assign(request.params.id, request.body) }, 201)
+  sendResponse(response, { data: await service.assign(String(request.params.id), request.body) }, 201)
 })
 
 export const closeWorkshopCase = asyncHandler(async (request, response) => {
-  sendResponse(response, { data: await service.close(request.params.id, request.body, getActorName(request)) })
+  sendResponse(response, { data: await service.close(String(request.params.id), request.body, getActorName(request)) })
 })

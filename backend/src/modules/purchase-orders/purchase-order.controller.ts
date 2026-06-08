@@ -12,13 +12,13 @@ export const createPurchaseOrder = asyncHandler(async (request, response) => {
 })
 
 export const updatePurchaseOrder = asyncHandler(async (request, response) => {
-  const purchaseOrder = await service.update(request.params.id, request.body, getActorName(request, ['updatedBy', 'createdBy', 'requestedBy']))
+  const purchaseOrder = await service.update(String(request.params.id), request.body, getActorName(request, ['updatedBy', 'createdBy', 'requestedBy']))
 
   sendResponse(response, { data: purchaseOrder })
 })
 
 export const deletePurchaseOrder = asyncHandler(async (request, response) => {
-  const purchaseOrder = await service.remove(request.params.id, getActorName(request, ['updatedBy', 'createdBy', 'requestedBy']))
+  const purchaseOrder = await service.remove(String(request.params.id), getActorName(request, ['updatedBy', 'createdBy', 'requestedBy']))
 
   sendResponse(response, { data: purchaseOrder })
 })
