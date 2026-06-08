@@ -17,7 +17,8 @@
     "desktop:dist": "npm run build && electron-builder",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check": "npm run lint && npm run typecheck && npm run backend:check",
+    "test": "vitest run",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run backend:check",
     "typecheck": "tsc -b",
     "backend:dev": "npm --prefix ../backend run dev",
     "backend:start": "npm --prefix ../backend run start",
@@ -48,7 +49,8 @@
     "globals": "^17.5.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.46.3",
-    "vite": "^6.4.2"
+    "vite": "^6.4.2",
+    "vitest": "^4.1.8"
   },
   "build": {
     "appId": "cl.truckworkshop.frontend",
