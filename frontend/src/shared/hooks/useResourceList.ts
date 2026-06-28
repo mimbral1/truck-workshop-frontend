@@ -33,10 +33,30 @@ export function useResourceList<T>(path: string, fallback: T[], params: QueryPar
 
     fetchResourceList<T>(path, parsedParams, { signal: controller.signal })
       .then((items) => {
-        if (isMounted) {
+        if (!isMounted) {
+          return
+        }
+
+        // Defensa ante respuestas 200 con forma inesperada (ej. un proxy/SPA
+        // fallback que devuelve HTML, o un backend que no entrega un arreglo).
+        // `data` esta tipado como `T[]`: nunca debe quedar undefined, porque
+        // toda la app hace `.filter`/`.map` sobre el. Si llega algo que no es
+        // arreglo, caemos al mock controlado como si la peticion hubiese fallado.
+        if (Array.isArray(items)) {
           setData(items)
           setError(null)
           setIsFallback(false)
+          return
+        }
+
+        try {
+          setData(resolveMockFallback(path, fallbackRef.current, new Error('Respuesta no es un arreglo')))
+          setError(null)
+          setIsFallback(true)
+        } catch (fallbackError) {
+          setError(fallbackError)
+          setIsFallback(false)
+          setData([])
         }
       })
       .catch((requestError) => {

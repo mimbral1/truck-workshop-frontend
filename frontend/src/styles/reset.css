@@ -7,6 +7,22 @@ html {
   min-height: 100%;
 }
 
+/* Ninguna vista debe provocar scroll horizontal accidental. Cada contenedor se
+   mantiene dentro del ancho del viewport; el scroll horizontal queda solo donde
+   se habilita explicitamente (ej. .tableScroll de las tablas). */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
 body,
 h1,
 h2,

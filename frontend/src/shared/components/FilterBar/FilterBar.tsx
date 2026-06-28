@@ -78,14 +78,15 @@ export function FilterBar({
           ) : null}
           {onClear ? (
             <Button
-              aria-label={clearLabel}
               icon={<Trash2 aria-hidden size={16} />}
               onClick={onClear}
               size="sm"
               title={clearLabel}
               type="button"
               variant="secondary"
-            />
+            >
+              {clearLabel}
+            </Button>
           ) : null}
         </div>
       ) : null}

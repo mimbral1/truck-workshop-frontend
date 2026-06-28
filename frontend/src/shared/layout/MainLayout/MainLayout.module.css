@@ -20,18 +20,31 @@
 }
 
 .workspace {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   min-width: 0;
+  max-width: 100%;
   min-height: 0;
-  grid-template-rows: var(--topbar-height) auto auto minmax(0, 1fr);
   overflow: hidden;
 }
 
+/* Banner de conexion y barras superiores conservan su alto natural; solo el
+   contenido principal absorbe el espacio restante y scrollea en vertical. Asi
+   ninguna barra recorta contenido y el header nunca tapa la vista util. */
+.workspace > :not(.content) {
+  flex: 0 0 auto;
+}
+
 .content {
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  /* El contenido nunca scrollea horizontal: las tablas mantienen su propio
+     scroll interno (.tableScroll). */
+  overflow-x: hidden;
   padding: 12px 14px;
 }
 
@@ -88,11 +101,5 @@
   .shortcutFeedback {
     right: 10px;
     bottom: 10px;
-  }
-}
-
-@media (max-width: 620px) {
-  .workspace {
-    grid-template-rows: auto auto auto minmax(0, 1fr);
   }
 }

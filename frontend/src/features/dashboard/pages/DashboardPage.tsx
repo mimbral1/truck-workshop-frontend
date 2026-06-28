@@ -24,9 +24,9 @@ import type { WorkshopBay } from '../../workshop-bays/types/workshopBay.types'
 import type { WorkshopCase } from '../../workshop-cases/types/workshopCase.types'
 import styles from './DashboardPage.module.css'
 
-const primaryActions = [
+const quickActions = [
   {
-    description: 'Ver trabajos por hora y estacion.',
+    description: 'Ver trabajos por hora y estación.',
     icon: CalendarDays,
     label: 'Revisar agenda',
     path: ROUTES.schedule,
@@ -100,9 +100,10 @@ function getMainFocus(workshopCases: WorkshopCase[]) {
     return {
       actionPath: ROUTES.caseDetail(breachedCase.id),
       actionText: 'Abrir caso',
-      description: `${breachedCase.caseNumber} esta vencido y asignado a ${breachedCase.mechanicName || 'taller'}.`,
+      description: `${breachedCase.caseNumber} está vencido y asignado a ${breachedCase.mechanicName || 'taller'}.`,
       eyebrow: 'Prioridad de hoy',
       icon: Wrench,
+      owner: breachedCase.mechanicName || 'Taller',
       title: 'Resolver SLA vencido',
       tone: 'danger' as const,
     }
@@ -115,6 +116,7 @@ function getMainFocus(workshopCases: WorkshopCase[]) {
       description: `${partsBlockedCase.caseNumber} necesita repuestos antes de avanzar.`,
       eyebrow: 'Bloqueo operativo',
       icon: PackageSearch,
+      owner: partsBlockedCase.warehouseManagerName || 'Bodega',
       title: 'Destrabar repuestos',
       tone: 'warning' as const,
     }
@@ -123,9 +125,10 @@ function getMainFocus(workshopCases: WorkshopCase[]) {
   return {
     actionPath: ROUTES.schedule,
     actionText: 'Ver agenda',
-    description: 'No hay alertas criticas inmediatas. Revisa la agenda y prepara el siguiente bloque de trabajo.',
-    eyebrow: 'Operacion estable',
+    description: 'No hay alertas críticas inmediatas. Revisa la agenda y prepara el siguiente bloque de trabajo.',
+    eyebrow: 'Operación estable',
     icon: CalendarDays,
+    owner: 'Equipo de turno',
     title: 'Planificar el turno',
     tone: 'success' as const,
   }
@@ -171,45 +174,48 @@ export function DashboardPage() {
             <Button icon={<ClipboardPlus size={18} />}>Crear caso</Button>
           </Link>
         }
-        description="Casos criticos, bloqueos, disponibilidad y proximas acciones."
+        description="Casos críticos, bloqueos, disponibilidad y próximas acciones."
         title="Inicio operativo"
       />
 
-      <Card className={styles.focusStrip}>
+      <Card className={[styles.focusStrip, styles[`focus_${mainFocus.tone}`]].join(' ')}>
         <div className={styles.focusIcon}>
           <FocusIcon aria-hidden size={20} />
         </div>
         <div className={styles.focusCopy}>
           <div className={styles.focusMeta}>
             <Badge tone={mainFocus.tone}>{mainFocus.eyebrow}</Badge>
-            <span>Prioridad operacional</span>
+            <span className={styles.focusOwner}>Responsable: {mainFocus.owner}</span>
           </div>
           <h2>{mainFocus.title}</h2>
           <p>{mainFocus.description}</p>
         </div>
-        <Link to={mainFocus.actionPath}>
-          <Button size="sm" variant="secondary">
+        <Link className={styles.focusAction} to={mainFocus.actionPath}>
+          <Button variant={mainFocus.tone === 'success' ? 'secondary' : 'primary'}>
             {mainFocus.actionText}
           </Button>
         </Link>
       </Card>
 
-      <section className={styles.actionGrid} aria-label="Acciones principales">
-        {primaryActions.map((action) => {
-          const Icon = action.icon
+      <section className={styles.quickActions} aria-label="Accesos rápidos">
+        <span className={styles.quickActionsLabel}>Accesos rápidos</span>
+        <div className={styles.actionGrid}>
+          {quickActions.map((action) => {
+            const Icon = action.icon
 
-          return (
-            <Link className={styles.actionCard} key={action.path} to={action.path}>
-              <span className={styles.actionIcon}>
-                <Icon aria-hidden size={20} />
-              </span>
-              <span>
-                <strong>{action.label}</strong>
-                <small>{action.description}</small>
-              </span>
-            </Link>
-          )
-        })}
+            return (
+              <Link className={styles.actionCard} key={action.path} to={action.path}>
+                <span className={styles.actionIcon}>
+                  <Icon aria-hidden size={18} />
+                </span>
+                <span className={styles.actionCopy}>
+                  <strong>{action.label}</strong>
+                  <small>{action.description}</small>
+                </span>
+              </Link>
+            )
+          })}
+        </div>
       </section>
 
       <section className={styles.signalGrid} aria-label="Indicadores clave">
@@ -273,7 +279,7 @@ export function DashboardPage() {
             </div>
             <div className={styles.turnList}>
               <Link to={`${ROUTES.mechanics}?status=busy`}>
-                <span>Mecanicos ocupados</span>
+                <span>Mecánicos ocupados</span>
                 <strong>{busyMechanics}</strong>
               </Link>
               <Link to={ROUTES.bays}>
@@ -286,12 +292,18 @@ export function DashboardPage() {
               </Link>
             </div>
             <Link className={styles.secondaryLink} to={ROUTES.reports}>
-              Ver reporterias cuando necesites mas detalle
+              Ver reportería cuando necesites más detalle
             </Link>
           </div>
         </Card>
       </div>
 
+      {/* En celular la acción principal queda siempre al alcance del pulgar. */}
+      <Link className={styles.mobileCreate} to={ROUTES.caseNew}>
+        <Button fullWidth icon={<ClipboardPlus size={18} />}>
+          Crear caso
+        </Button>
+      </Link>
     </PageContainer>
   )
 }

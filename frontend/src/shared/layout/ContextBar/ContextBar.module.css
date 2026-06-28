@@ -117,14 +117,14 @@
 
 .relatedNav a {
   display: inline-flex;
-  min-height: 27px;
+  min-height: 30px;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 10px;
   color: var(--color-text-muted);
   background: #f9fbfc;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   font-weight: 780;
   white-space: nowrap;
 }
@@ -134,9 +134,18 @@
   border-color: rgb(15 118 110 / 0.32);
 }
 
+/* Seccion activa: verde solo aqui, para anclar "donde estoy". */
+.relatedNav a.activeTab {
+  color: var(--color-primary-dark);
+  background: var(--color-primary-soft);
+  border-color: rgb(15 118 110 / 0.32);
+  font-weight: 850;
+}
+
 @media (max-width: 880px) {
   .contextBar {
     display: grid;
+    gap: 7px;
     padding: 6px 10px;
   }
 
@@ -144,10 +153,23 @@
     width: 100%;
   }
 
+  /* Tabs en scroll horizontal limpio: no se cortan los textos y el scrollbar
+     queda oculto para una lectura mas prolija en celular. */
   .relatedNav {
+    width: 100%;
     justify-content: flex-start;
     overflow-x: auto;
-    padding-bottom: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 1px;
+  }
+
+  .relatedNav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .relatedNav a {
+    flex: 0 0 auto;
   }
 }
 

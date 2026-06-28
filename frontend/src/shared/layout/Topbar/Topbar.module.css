@@ -4,18 +4,20 @@
   z-index: 10;
   display: flex;
   min-width: 0;
+  max-width: 100%;
+  min-height: var(--topbar-height);
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 0 12px;
+  padding: 8px 12px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
 }
 
+/* Boton de menu (solo en movil/drawer): cuadrado, alineado con el resto. */
 .menuButton {
   display: inline-grid;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
   place-items: center;
   color: var(--color-text);
@@ -37,30 +39,33 @@
 
 .searchWrap {
   position: relative;
-  width: min(760px, 100%);
-  min-width: 240px;
-  flex: 1 1 520px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .search {
   display: flex;
   width: 100%;
-  min-height: 34px;
+  height: 40px;
   align-items: center;
   gap: 8px;
   padding: 0 12px;
   color: var(--color-text-muted);
   background: var(--color-surface-muted);
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font: inherit;
   text-align: left;
 }
 
+.search svg {
+  flex: 0 0 auto;
+}
+
 .search:hover {
   color: var(--color-text);
-  box-shadow: inset 0 0 0 1px var(--color-border);
+  border-color: var(--color-border);
 }
 
 .search:focus-visible {
@@ -74,9 +79,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.9rem;
 }
 
-.search kbd,
 .commandHint {
   flex: 0 0 auto;
   padding: 3px 6px;
@@ -90,205 +95,22 @@
   line-height: 1;
 }
 
-.commandHint {
-  cursor: pointer;
-}
-
-.commandHint:hover,
-.commandHint:focus-visible {
-  color: var(--color-primary-dark);
-  border-color: var(--color-primary);
-  outline: 0;
-}
-
-.quickActions {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-}
-
-.quickActionMode {
-  display: inline-flex;
-  min-height: 26px;
-  align-items: center;
-  padding: 0 8px;
-  color: var(--color-text-muted);
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 850;
-  white-space: nowrap;
-}
-
-.shortcutButton {
-  position: relative;
-  display: inline-grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  color: var(--color-text-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease,
-    transform 120ms ease;
-}
-
-.shortcutButton:hover {
-  color: var(--color-text);
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-muted);
-}
-
-.shortcutButton:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-
-.shortcutButton kbd {
-  position: absolute;
-  right: -3px;
-  bottom: -4px;
-  display: inline-grid;
-  min-width: 14px;
-  height: 14px;
-  place-items: center;
-  padding: 0 3px;
-  color: var(--color-text-muted);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  font-family: inherit;
-  font-size: 0.62rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.primaryShortcut {
-  color: #fff;
-  background: var(--color-primary);
-}
-
-.primaryShortcut:hover {
-  color: #fff;
-  background: var(--color-primary-dark);
-}
-
-.primaryShortcut kbd {
-  color: var(--color-primary);
-}
-
-.moreWrap {
-  position: relative;
-}
-
-.moreButton {
-  display: inline-grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  color: var(--color-text-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.moreButton:hover,
-.moreButton[aria-expanded='true'] {
-  color: var(--color-text);
-  background: var(--color-surface-muted);
-  border-color: var(--color-border);
-}
-
-.moreMenu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 24;
-  display: grid;
-  min-width: 230px;
-  gap: 2px;
-  padding: 6px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-}
-
-.moreAction {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) max-content;
-  gap: 9px;
-  align-items: center;
-  min-height: 36px;
-  padding: 0 8px;
-  color: var(--color-text);
-  border-radius: var(--radius-sm);
-  font-size: 0.86rem;
-  font-weight: 750;
-}
-
-.moreAction:hover {
-  background: var(--color-surface-muted);
-}
-
-.moreAction svg {
-  color: var(--color-text-muted);
-}
-
-.moreAction kbd {
-  min-width: 18px;
-  padding: 2px 5px;
-  color: var(--color-text-muted);
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  font: inherit;
-  font-size: 0.7rem;
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 .actions {
   display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 10px;
-}
-
-.iconButton,
-.profile {
-  display: inline-flex;
-  min-height: 34px;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+}
+
+.iconButton {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
   color: var(--color-text-muted);
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-}
-
-.iconButton {
   cursor: pointer;
 }
 
@@ -298,45 +120,32 @@
   border-color: var(--color-border-strong);
 }
 
-.profile {
-  color: var(--color-text);
-  font-size: 0.9rem;
-  font-weight: 700;
+.iconButton:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
-@media (max-width: 620px) {
+/* El buscador no acapara todo el ancho en escritorio: deja respirar la barra. */
+@media (min-width: 768px) {
+  .searchWrap {
+    flex: 1 1 520px;
+    max-width: 760px;
+  }
+}
+
+@media (max-width: 767px) {
   .topbar {
-    align-items: stretch;
-    justify-content: flex-start;
     gap: 8px;
     padding: 8px 10px;
-    flex-direction: column;
   }
 
-  .searchWrap {
-    flex: 0 1 auto;
-    min-width: 0;
-    width: 100%;
+  /* "Ctrl Shift K" y el acceso a atajos de teclado no aportan en celular. */
+  .commandHint,
+  .deskOnly {
+    display: none;
   }
 
-  .quickActions {
-    width: 100%;
-    justify-content: flex-start;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-
-  .shortcutButton {
-    flex: 0 0 auto;
-  }
-
-  .actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .moreMenu {
-    left: 0;
-    right: auto;
+  .searchPlaceholder {
+    font-size: 0.86rem;
   }
 }

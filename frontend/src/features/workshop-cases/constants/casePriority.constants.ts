@@ -6,11 +6,11 @@ export const CASE_PRIORITY_OPTIONS: Array<{ label: string; value: WorkshopCasePr
   { label: 'Baja', value: 'low' },
   { label: 'Media', value: 'medium' },
   { label: 'Alta', value: 'high' },
-  { label: 'Critica', value: 'critical' },
+  { label: 'Crítica', value: 'critical' },
 ]
 
 export const CASE_PRIORITY_LABELS: Record<WorkshopCasePriority, string> = {
-  critical: 'Critica',
+  critical: 'Crítica',
   high: 'Alta',
   low: 'Baja',
   medium: 'Media',

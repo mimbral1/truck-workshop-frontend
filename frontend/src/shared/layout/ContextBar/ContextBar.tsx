@@ -44,6 +44,12 @@ export function ContextBar() {
   const showGroup = match.group.label !== 'Plataforma' && match.group.label !== match.parent.label
   const relatedItems = getRelatedNavigationItems(match)
   const sectionLabel = match.item.section
+  // Mantener visible la seccion activa: el item actual encabeza los tabs marcado
+  // como activo, seguido de las vistas hermanas relacionadas.
+  const tabs = [
+    { active: true, label: match.item.label, path: match.item.path },
+    ...relatedItems.map((item) => ({ active: false, label: item.label, path: item.path })),
+  ]
 
   return (
     <section className={styles.contextBar} aria-label="Contexto operacional">
@@ -69,11 +75,16 @@ export function ContextBar() {
         ) : null}
         {sectionLabel ? <span className={styles.sectionPill}>{sectionLabel}</span> : null}
       </div>
-      {relatedItems.length > 0 ? (
-        <nav aria-label={`Vistas relacionadas de ${match.parent.label}`} className={styles.relatedNav}>
-          {relatedItems.map((item) => (
-            <Link key={item.path} to={item.path}>
-              {item.label}
+      {tabs.length > 1 ? (
+        <nav aria-label={`Vistas de ${match.parent.label}`} className={styles.relatedNav}>
+          {tabs.map((tab) => (
+            <Link
+              aria-current={tab.active ? 'page' : undefined}
+              className={tab.active ? styles.activeTab : undefined}
+              key={tab.path}
+              to={tab.path}
+            >
+              {tab.label}
             </Link>
           ))}
         </nav>
