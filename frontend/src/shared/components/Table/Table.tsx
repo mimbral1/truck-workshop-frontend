@@ -482,7 +482,7 @@ export function Table<T,>({
                     tabIndex={isActionableRow ? 0 : undefined}
                   >
                     {selectable ? (
-                      <td className={styles.center}>
+                      <td className={[styles.center, styles.selectCell].join(' ')}>
                         <input
                           aria-label={
                             selection?.getRowLabel?.(item) || `Seleccionar ${getRowLabel?.(item) || getRowKey(item)}`
@@ -494,7 +494,9 @@ export function Table<T,>({
                       </td>
                     ) : null}
                     {columns.map((column) => (
-                      <td className={styles[column.align || 'left']} key={column.key}>
+                      // `data-label` alimenta la etiqueta de cada campo cuando la tabla se
+                      // transforma en tarjetas apiladas en movil (ver Table.module.css).
+                      <td className={styles[column.align || 'left']} data-label={column.header || undefined} key={column.key}>
                         <div className={styles.cellContent}>{column.render(item)}</div>
                       </td>
                     ))}

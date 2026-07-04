@@ -2,6 +2,8 @@ export interface SessionUserInfo {
   id: string
   name: string
   email?: string
+  /** Rol del usuario (ej. 'ADMIN'). Habilita el menu por rol en el Sidebar. */
+  role?: string
 }
 
 const SESSION_STORAGE_KEY = 'truck-workshop-session'
@@ -26,11 +28,13 @@ export function getCurrentSessionUser(
 
     const user = session.user || {}
     const email = typeof user.email === 'string' ? user.email : undefined
+    const role = typeof user.role === 'string' ? user.role : undefined
 
     return {
       id: String(user.id || email || fallback.id),
       name: String(user.name || email || fallback.name),
       email,
+      role,
     }
   } catch {
     return fallback

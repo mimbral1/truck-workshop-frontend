@@ -634,15 +634,203 @@
   border: 0;
 }
 
+/* --- Accesos rápidos / favoritos --- */
+.favorites {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgb(148 163 184 / 0.18);
+}
+
+.favoritesTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8da0b8;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.favoritesTitle svg {
+  color: #5eead4;
+}
+
+.favoritesGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.favoriteLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #d5e1f1;
+  background: rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(148 163 184 / 0.16);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.favoriteLink span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favoriteLink svg {
+  flex: 0 0 auto;
+  color: #9fb0c5;
+}
+
+.favoriteLink:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 0.1);
+}
+
+.favoriteLink.active {
+  color: #fff;
+  background: #0b424b;
+  border-color: #28c7bc;
+}
+
+/* --- Nivel 1 móvil: lista de módulos --- */
+.moduleList {
+  display: grid;
+  gap: 4px;
+}
+
+.moduleRow {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  padding: 0 12px;
+  color: #e2e8f0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+
+.moduleRow:hover {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.moduleRow.active {
+  color: #fff;
+  background: #0b424b;
+  border-color: #28c7bc;
+  box-shadow: inset 4px 0 0 #4de1d2;
+}
+
+.moduleIcon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #bfeee8;
+  background: rgb(255 255 255 / 0.07);
+  border-radius: 8px;
+}
+
+.moduleRow.active .moduleIcon {
+  color: #99f6e4;
+  background: rgb(45 225 210 / 0.16);
+}
+
+.moduleLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moduleChevron {
+  flex: 0 0 auto;
+  color: #8da0b8;
+}
+
+.moduleRow .navBadge {
+  margin-left: 0;
+}
+
+/* --- Nivel 2 móvil: secciones y páginas del módulo --- */
+.modulePanel {
+  display: grid;
+  gap: 8px;
+}
+
+.moduleBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  color: #fff;
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(148 163 184 / 0.22);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.moduleBack:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+
+.moduleBack svg {
+  flex: 0 0 auto;
+  color: #5eead4;
+}
+
+.modulePanel .subnav {
+  margin: 0;
+  padding-left: 0;
+  border-left: 0;
+}
+
+.modulePanel .sublink {
+  min-height: 42px;
+  font-size: 0.88rem;
+}
+
 @media (max-width: 880px) {
   .sidebar {
     position: fixed;
     grid-template-rows: auto minmax(0, 1fr) auto;
-    width: min(var(--sidebar-width), calc(100vw - 18px));
+    /* Más angosto que antes: deja ver contexto de la pantalla principal detrás
+       del drawer en vez de ocupar casi todo el ancho. */
+    width: min(320px, calc(100vw - 56px));
     height: 100vh;
-    padding: 10px 14px 14px;
+    padding: 10px 12px 12px;
     box-shadow: 22px 0 44px rgb(15 23 42 / 0.28);
     transform: translateX(-104%);
+  }
+
+  /* Footer de usuario compacto en móvil para no comer área útil del menú. */
+  .userDock {
+    min-height: 44px;
+    margin-top: 8px;
+  }
+
+  .userCopy small {
+    display: none;
   }
 
   .sidebar.open {

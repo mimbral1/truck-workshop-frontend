@@ -13,6 +13,13 @@ export async function getWorkshopCases() {
       params: { limit: 100, sort: 'createdAt', order: 'desc' },
     })
 
+    // Respuesta 200 con forma inesperada (ej. SPA fallback que devuelve HTML):
+    // la tratamos como fallo para no propagar un valor no-arreglo que luego
+    // rompe el `.filter` de la vista de casos.
+    if (!Array.isArray(response.data?.data)) {
+      throw new Error('Respuesta de /cases no es un arreglo')
+    }
+
     return response.data.data
   } catch (error) {
     if (!shouldUseMockFallback()) {

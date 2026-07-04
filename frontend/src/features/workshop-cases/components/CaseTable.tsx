@@ -40,7 +40,7 @@ export function CaseTable({ cases }: CaseTableProps) {
       ),
     },
     {
-      header: 'Operacion / Chofer',
+      header: 'Operación',
       key: 'customer',
       render: (item) => (
         <div>
@@ -98,7 +98,7 @@ export function CaseTable({ cases }: CaseTableProps) {
       columns={columns}
       data={cases}
       density="compact"
-      emptyDescription="Ajusta la busqueda o limpia filtros para volver a ver casos."
+      emptyDescription="Ajusta la búsqueda o limpia filtros para volver a ver casos."
       emptyLabel="No hay casos con estos filtros"
       getRowHref={(item) => ROUTES.caseDetail(item.id)}
       getRowKey={(item) => item.id}

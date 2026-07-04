@@ -136,7 +136,7 @@ export function getNextStepForCase(workshopCase: WorkshopCase): CaseNextStep {
   if (workshopCase.status === 'closed') {
     return {
       actionLabel: 'Caso cerrado',
-      description: workshopCase.closureSummary || 'El camion ya fue cerrado y liberado por taller.',
+      description: workshopCase.closureSummary || 'El camión ya fue cerrado y liberado por taller.',
       stageId: 'closure',
       tone: 'success',
     }
@@ -145,7 +145,7 @@ export function getNextStepForCase(workshopCase: WorkshopCase): CaseNextStep {
   if (!hasResponsible) {
     return {
       actionLabel: 'Asignar responsable',
-      description: 'Define mecanico responsable antes de avanzar el trabajo operativo.',
+      description: 'Define mecánico responsable antes de avanzar el trabajo operativo.',
       stageId: 'reception',
       tone: 'warning',
     }
@@ -153,8 +153,8 @@ export function getNextStepForCase(workshopCase: WorkshopCase): CaseNextStep {
 
   if (workshopCase.status === 'new' || workshopCase.status === 'diagnosis') {
     return {
-      actionLabel: 'Registrar diagnostico',
-      description: 'Completa sintomas, causa probable y evidencia tecnica del caso.',
+      actionLabel: 'Registrar diagnóstico',
+      description: 'Completa síntomas, causa probable y evidencia técnica del caso.',
       stageId: 'diagnosis',
       tone: 'info',
     }
@@ -162,8 +162,8 @@ export function getNextStepForCase(workshopCase: WorkshopCase): CaseNextStep {
 
   if (workshopCase.status === 'solution') {
     return {
-      actionLabel: 'Crear cotizacion',
-      description: 'Valida repuestos, mano de obra y costo antes de enviar a decision.',
+      actionLabel: 'Crear cotización',
+      description: 'Valida repuestos, mano de obra y costo antes de enviar a decisión.',
       stageId: 'quote',
       tone: 'info',
     }
@@ -172,7 +172,7 @@ export function getNextStepForCase(workshopCase: WorkshopCase): CaseNextStep {
   if (hasPurchaseBlocker) {
     return {
       actionLabel: 'Resolver bloqueo',
-      description: 'Hay repuestos con compra o recepcion pendiente antes de liberar el avance.',
+      description: 'Hay repuestos con compra o recepción pendiente antes de liberar el avance.',
       stageId: 'approval',
       tone: 'danger',
     }
@@ -189,7 +189,7 @@ export function getNextStepForCase(workshopCase: WorkshopCase): CaseNextStep {
 
   return {
     actionLabel: 'Cerrar caso',
-    description: 'Revisa prueba final, evidencia y resumen antes de liberar el camion.',
+    description: 'Revisa prueba final, evidencia y resumen antes de liberar el camión.',
     stageId: 'closure',
     tone: 'success',
   }
